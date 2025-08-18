@@ -1,0 +1,52 @@
+# Dependencies
+/vendor/
+/node_modules/
+
+# Laravel build / cache
+/public/hot
+/public/storage
+public/build/
+public/assets/
+public/mix-manifest.json
+public/manifest.json
+
+/storage/*.key
+/storage/framework/*
+/storage/logs/*
+/bootstrap/cache/*.php
+
+# Compiled output
+.env.backup
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Composer / npm logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+composer.lock
+
+# Laravel specific
+Homestead.json
+Homestead.yaml
+npm-debug.log
+.env
+.env.*.backup
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*.iml
+
+# PHPUnit
+.phpunit.result.cache
+coverage/
+
+# Docker / CI
+docker-compose.override.yml

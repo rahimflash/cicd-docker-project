@@ -1,0 +1,775 @@
+// #!/usr/bin/env groovy
+
+// pipeline {
+//     agent any
+    
+//     environment {
+//         // Global environment variables
+//         DOCKER_REGISTRY = credentials('docker-registry-url')
+//         DOCKER_CREDENTIALS = credentials('docker-hub-credentials')
+//         PROJECT_NAME = 'clms'
+//         BUILD_NUMBER = "${env.BUILD_NUMBER}"
+//         GIT_COMMIT_SHORT = "${env.GIT_COMMIT[0..7]}"
+        
+//         // Application environment variables
+//         APP_NAME = 'CLMS'
+//         NODE_VERSION = '18'
+//         PHP_VERSION = '8.1'
+        
+//         // Deployment environments
+//         DEV_NAMESPACE = 'clms-dev'
+//         STAGING_NAMESPACE = 'clms-staging'
+//         PROD_NAMESPACE = 'clms-prod'
+        
+//         // Docker image names
+//         BACKEND_IMAGE = "${DOCKER_REGISTRY}/${PROJECT_NAME}-backend"
+//         FRONTEND_IMAGE = "${DOCKER_REGISTRY}/${PROJECT_NAME}-frontend"
+//     }
+    
+//     options {
+//         buildDiscarder(logRotator(
+//             numToKeepStr: '10',
+//             daysToKeepStr: '30',
+//             artifactNumToKeepStr: '5'
+//         ))
+//         timeout(time: 60, unit: 'MINUTES')
+//         skipStagesAfterUnstable()
+//         parallelsAlwaysFailFast()
+//         disableConcurrentBuilds()
+//     }
+    
+//     triggers {
+//         // Poll SCM every 5 minutes for changes
+//         pollSCM('H/5 * * * *')
+        
+//         // Build daily at 2 AM for dependency updates
+//         cron('0 2 * * *')
+//     }
+    
+//     parameters {
+//         choice(
+//             name: 'DEPLOY_ENVIRONMENT',
+//             choices: ['development', 'staging', 'production'],
+//             description: 'Target deployment environment'
+//         )
+//         booleanParam(
+//             name: 'SKIP_TESTS',
+//             defaultValue: false,
+//             description: 'Skip running tests (not recommended for production)'
+//         )
+//         booleanParam(
+//             name: 'FORCE_REBUILD',
+//             defaultValue: false,
+//             description: 'Force rebuild without using Docker cache'
+//         )
+//         booleanParam(
+//             name: 'DEPLOY_BACKEND',
+//             defaultValue: true,
+//             description: 'Deploy backend service'
+//         )
+//         booleanParam(
+//             name: 'DEPLOY_FRONTEND',
+//             defaultValue: true,
+//             description: 'Deploy frontend service'
+//         )
+//     }
+    
+//     stages {
+//         stage('Preparation') {
+//             steps {
+//                 script {
+//                     // Clean workspace
+//                     cleanWs()
+                    
+//                     // Checkout code
+//                     checkout scm
+                    
+//                     // Set build display name
+//                     currentBuild.displayName = "#${BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
+//                     currentBuild.description = "Branch: ${env.BRANCH_NAME} | Env: ${params.DEPLOY_ENVIRONMENT}"
+                    
+//                     // Load environment-specific variables
+//                     loadEnvironmentConfig()
+                    
+//                     // Notify build start
+//                     notifyBuildStart()
+//                 }
+//             }
+//         }
+        
+//         stage('Code Quality & Security') {
+//             parallel {
+//                 stage('Backend Security Scan') {
+//                     when {
+//                         expression { params.DEPLOY_BACKEND }
+//                     }
+//                     steps {
+//                         dir('backend') {
+//                             script {
+//                                 // Composer audit for security vulnerabilities
+//                                 sh '''
+//                                     docker run --rm -v $(pwd):/app composer:2.7 audit || true
+//                                 '''
+                                
+//                                 // PHP syntax check
+//                                 sh '''
+//                                     find . -name "*.php" -exec php -l {} \\; | grep -v "No syntax errors"
+//                                 '''
+                                
+//                                 // Laravel security checks
+//                                 sh '''
+//                                     docker run --rm -v $(pwd):/app composer:2.7 require --dev enlightn/security-checker
+//                                     docker run --rm -v $(pwd):/app composer:2.7 exec security-checker security:check || true
+//                                 '''
+//                             }
+//                         }
+//                     }
+//                 }
+                
+//                 stage('Frontend Security Scan') {
+//                     when {
+//                         expression { params.DEPLOY_FRONTEND }
+//                     }
+//                     steps {
+//                         dir('frontend') {
+//                             script {
+//                                 // NPM audit
+//                                 sh '''
+//                                     docker run --rm -v $(pwd):/app -w /app node:${NODE_VERSION}-alpine npm audit --audit-level=high || true
+//                                 '''
+                                
+//                                 // ESLint security rules
+//                                 sh '''
+//                                     docker run --rm -v $(pwd):/app -w /app node:${NODE_VERSION}-alpine npm install
+//                                     docker run --rm -v $(pwd):/app -w /app node:${NODE_VERSION}-alpine npm run lint || true
+//                                 '''
+//                             }
+//                         }
+//                     }
+//                 }
+                
+//                 stage('Infrastructure Security') {
+//                     steps {
+//                         script {
+//                             // Dockerfile security scan with Trivy
+//                             sh '''
+//                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+//                                     -v $(pwd):/src aquasec/trivy:latest fs --exit-code 0 --no-progress /src
+//                             '''
+                            
+//                             // Git secrets scan
+//                             sh '''
+//                                 docker run --rm -v $(pwd):/src trufflesecurity/trufflehog:latest filesystem /src \
+//                                     --exclude-paths=.trufflehogignore --fail || true
+//                             '''
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+        
+//         stage('Build & Test') {
+//             parallel {
+//                 stage('Backend Build & Test') {
+//                     when {
+//                         expression { params.DEPLOY_BACKEND }
+//                     }
+//                     stages {
+//                         stage('Backend Build') {
+//                             steps {
+//                                 dir('backend') {
+//                                     script {
+//                                         // Build backend Docker image
+//                                         def buildArgs = params.FORCE_REBUILD ? '--no-cache' : ''
+//                                         sh """
+//                                             docker build ${buildArgs} -t ${BACKEND_IMAGE}:${BUILD_NUMBER} \
+//                                                 -t ${BACKEND_IMAGE}:latest \
+//                                                 --target production \
+//                                                 --build-arg BUILD_NUMBER=${BUILD_NUMBER} \
+//                                                 --build-arg GIT_COMMIT=${GIT_COMMIT} .
+//                                         """
+//                                     }
+//                                 }
+//                             }
+//                         }
+                        
+//                         stage('Backend Tests') {
+//                             when {
+//                                 not { params.SKIP_TESTS }
+//                             }
+//                             steps {
+//                                 dir('backend') {
+//                                     script {
+//                                         // Run Laravel tests
+//                                         sh '''
+//                                             docker run --rm \
+//                                                 -v $(pwd):/var/www/html \
+//                                                 -e APP_ENV=testing \
+//                                                 -e DB_CONNECTION=sqlite \
+//                                                 -e DB_DATABASE=:memory: \
+//                                                 ${BACKEND_IMAGE}:${BUILD_NUMBER} \
+//                                                 php artisan test --coverage --junit=test-results.xml
+//                                         '''
+                                        
+//                                         // Publish test results
+//                                         publishTestResults testResultsPattern: 'test-results.xml'
+                                        
+//                                         // Code coverage
+//                                         publishCoverage adapters: [
+//                                             cloverAdapter('coverage.xml')
+//                                         ], sourceFileResolver: sourceFiles('STORE_LAST_BUILD')
+//                                     }
+//                                 }
+//                             }
+//                         }
+                        
+//                         stage('Backend Quality Gates') {
+//                             steps {
+//                                 dir('backend') {
+//                                     script {
+//                                         // PHPStan static analysis
+//                                         sh '''
+//                                             docker run --rm -v $(pwd):/app \
+//                                                 ${BACKEND_IMAGE}:${BUILD_NUMBER} \
+//                                                 ./vendor/bin/phpstan analyse --memory-limit=2G || true
+//                                         '''
+                                        
+//                                         // PHP CS Fixer
+//                                         sh '''
+//                                             docker run --rm -v $(pwd):/app \
+//                                                 ${BACKEND_IMAGE}:${BUILD_NUMBER} \
+//                                                 ./vendor/bin/php-cs-fixer fix --dry-run --diff || true
+//                                         '''
+//                                     }
+//                                 }
+//                             }
+//                         }
+//                     }
+//                 }
+                
+//                 stage('Frontend Build & Test') {
+//                     when {
+//                         expression { params.DEPLOY_FRONTEND }
+//                     }
+//                     stages {
+//                         stage('Frontend Build') {
+//                             steps {
+//                                 dir('frontend') {
+//                                     script {
+//                                         // Build frontend Docker image
+//                                         def buildArgs = params.FORCE_REBUILD ? '--no-cache' : ''
+//                                         sh """
+//                                             docker build ${buildArgs} -t ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
+//                                                 -t ${FRONTEND_IMAGE}:latest \
+//                                                 --build-arg BUILD_NUMBER=${BUILD_NUMBER} \
+//                                                 --build-arg GIT_COMMIT=${GIT_COMMIT} \
+//                                                 --build-arg NEXT_PUBLIC_APP_VERSION=${BUILD_NUMBER} .
+//                                         """
+//                                     }
+//                                 }
+//                             }
+//                         }
+                        
+//                         stage('Frontend Tests') {
+//                             when {
+//                                 not { params.SKIP_TESTS }
+//                             }
+//                             steps {
+//                                 dir('frontend') {
+//                                     script {
+//                                         // Run Jest tests
+//                                         sh '''
+//                                             docker run --rm \
+//                                                 -v $(pwd):/app \
+//                                                 -w /app \
+//                                                 node:${NODE_VERSION}-alpine \
+//                                                 sh -c "npm ci && npm run test:ci"
+//                                         '''
+                                        
+//                                         // ESLint
+//                                         sh '''
+//                                             docker run --rm \
+//                                                 -v $(pwd):/app \
+//                                                 -w /app \
+//                                                 node:${NODE_VERSION}-alpine \
+//                                                 npm run lint
+//                                         '''
+                                        
+//                                         // Type checking
+//                                         sh '''
+//                                             docker run --rm \
+//                                                 -v $(pwd):/app \
+//                                                 -w /app \
+//                                                 node:${NODE_VERSION}-alpine \
+//                                                 npm run type-check
+//                                         '''
+//                                     }
+//                                 }
+//                             }
+//                         }
+                        
+//                         stage('Frontend E2E Tests') {
+//                             when {
+//                                 allOf {
+//                                     not { params.SKIP_TESTS }
+//                                     anyOf {
+//                                         branch 'main'
+//                                         branch 'develop'
+//                                         expression { params.DEPLOY_ENVIRONMENT == 'staging' }
+//                                     }
+//                                 }
+//                             }
+//                             steps {
+//                                 script {
+//                                     // Run Playwright E2E tests
+//                                     sh '''
+//                                         docker-compose -f docker-compose.test.yml up -d
+//                                         docker run --rm \
+//                                             --network container:clms-frontend-test \
+//                                             -v $(pwd)/frontend:/app \
+//                                             -w /app \
+//                                             mcr.microsoft.com/playwright:latest \
+//                                             sh -c "npm ci && npm run test:e2e"
+//                                         docker-compose -f docker-compose.test.yml down
+//                                     '''
+//                                 }
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+        
+//         stage('Security & Vulnerability Scanning') {
+//             parallel {
+//                 stage('Backend Image Scan') {
+//                     when {
+//                         expression { params.DEPLOY_BACKEND }
+//                     }
+//                     steps {
+//                         script {
+//                             // Trivy security scan for backend image
+//                             sh """
+//                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+//                                     aquasec/trivy:latest image \
+//                                     --exit-code 0 \
+//                                     --severity HIGH,CRITICAL \
+//                                     --format json \
+//                                     --output backend-security-report.json \
+//                                     ${BACKEND_IMAGE}:${BUILD_NUMBER}
+//                             """
+                            
+//                             archiveArtifacts artifacts: 'backend-security-report.json', fingerprint: true
+//                         }
+//                     }
+//                 }
+                
+//                 stage('Frontend Image Scan') {
+//                     when {
+//                         expression { params.DEPLOY_FRONTEND }
+//                     }
+//                     steps {
+//                         script {
+//                             // Trivy security scan for frontend image
+//                             sh """
+//                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+//                                     aquasec/trivy:latest image \
+//                                     --exit-code 0 \
+//                                     --severity HIGH,CRITICAL \
+//                                     --format json \
+//                                     --output frontend-security-report.json \
+//                                     ${FRONTEND_IMAGE}:${BUILD_NUMBER}
+//                             """
+                            
+//                             archiveArtifacts artifacts: 'frontend-security-report.json', fingerprint: true
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+        
+//         stage('Push Images') {
+//             when {
+//                 anyOf {
+//                     branch 'main'
+//                     branch 'develop'
+//                     expression { params.DEPLOY_ENVIRONMENT != 'development' }
+//                 }
+//             }
+//             steps {
+//                 script {
+//                     docker.withRegistry("https://${DOCKER_REGISTRY}", "${DOCKER_CREDENTIALS}") {
+//                         parallel(
+//                             "Push Backend": {
+//                                 if (params.DEPLOY_BACKEND) {
+//                                     sh "docker push ${BACKEND_IMAGE}:${BUILD_NUMBER}"
+//                                     sh "docker push ${BACKEND_IMAGE}:latest"
+                                    
+//                                     // Tag for environment
+//                                     sh "docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER} ${BACKEND_IMAGE}:${params.DEPLOY_ENVIRONMENT}"
+//                                     sh "docker push ${BACKEND_IMAGE}:${params.DEPLOY_ENVIRONMENT}"
+//                                 }
+//                             },
+//                             "Push Frontend": {
+//                                 if (params.DEPLOY_FRONTEND) {
+//                                     sh "docker push ${FRONTEND_IMAGE}:${BUILD_NUMBER}"
+//                                     sh "docker push ${FRONTEND_IMAGE}:latest"
+                                    
+//                                     // Tag for environment
+//                                     sh "docker tag ${FRONTEND_IMAGE}:${BUILD_NUMBER} ${FRONTEND_IMAGE}:${params.DEPLOY_ENVIRONMENT}"
+//                                     sh "docker push ${FRONTEND_IMAGE}:${params.DEPLOY_ENVIRONMENT}"
+//                                 }
+//                             }
+//                         )
+//                     }
+//                 }
+//             }
+//         }
+        
+//         stage('Deploy to Development') {
+//             when {
+//                 allOf {
+//                     anyOf {
+//                         branch 'develop'
+//                         expression { params.DEPLOY_ENVIRONMENT == 'development' }
+//                     }
+//                     not { changeRequest() }
+//                 }
+//             }
+//             steps {
+//                 script {
+//                     deployToEnvironment('development')
+//                 }
+//             }
+//         }
+        
+//         stage('Deploy to Staging') {
+//             when {
+//                 anyOf {
+//                     allOf {
+//                         branch 'main'
+//                         expression { params.DEPLOY_ENVIRONMENT == 'staging' }
+//                     }
+//                     expression { params.DEPLOY_ENVIRONMENT == 'staging' }
+//                 }
+//             }
+//             steps {
+//                 script {
+//                     deployToEnvironment('staging')
+//                 }
+//             }
+//         }
+        
+//         stage('Production Approval') {
+//             when {
+//                 expression { params.DEPLOY_ENVIRONMENT == 'production' }
+//             }
+//             steps {
+//                 script {
+//                     def deploymentApproved = false
+//                     try {
+//                         timeout(time: 24, unit: 'HOURS') {
+//                             deploymentApproved = input(
+//                                 message: 'Deploy to Production?',
+//                                 ok: 'Deploy',
+//                                 parameters: [
+//                                     booleanParam(
+//                                         defaultValue: false,
+//                                         description: 'Confirm production deployment',
+//                                         name: 'CONFIRM_PRODUCTION_DEPLOY'
+//                                     )
+//                                 ],
+//                                 submitterParameter: 'APPROVED_BY'
+//                             ).CONFIRM_PRODUCTION_DEPLOY
+//                         }
+//                     } catch (Exception e) {
+//                         deploymentApproved = false
+//                         echo "Production deployment timeout or cancelled"
+//                     }
+                    
+//                     if (!deploymentApproved) {
+//                         error("Production deployment not approved")
+//                     }
+                    
+//                     env.APPROVED_BY = env.APPROVED_BY ?: 'system'
+//                     echo "Production deployment approved by: ${env.APPROVED_BY}"
+//                 }
+//             }
+//         }
+        
+//         stage('Deploy to Production') {
+//             when {
+//                 expression { params.DEPLOY_ENVIRONMENT == 'production' }
+//             }
+//             steps {
+//                 script {
+//                     deployToEnvironment('production')
+//                 }
+//             }
+//         }
+        
+//         stage('Post-Deployment Tests') {
+//             when {
+//                 anyOf {
+//                     expression { params.DEPLOY_ENVIRONMENT == 'staging' }
+//                     expression { params.DEPLOY_ENVIRONMENT == 'production' }
+//                 }
+//             }
+//             parallel {
+//                 stage('Health Checks') {
+//                     steps {
+//                         script {
+//                             runHealthChecks(params.DEPLOY_ENVIRONMENT)
+//                         }
+//                     }
+//                 }
+                
+//                 stage('Smoke Tests') {
+//                     steps {
+//                         script {
+//                             runSmokeTests(params.DEPLOY_ENVIRONMENT)
+//                         }
+//                     }
+//                 }
+                
+//                 stage('Performance Tests') {
+//                     when {
+//                         expression { params.DEPLOY_ENVIRONMENT == 'staging' }
+//                     }
+//                     steps {
+//                         script {
+//                             runPerformanceTests(params.DEPLOY_ENVIRONMENT)
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+    
+//     post {
+//         always {
+//             script {
+//                 // Clean up Docker images
+//                 sh '''
+//                     docker image prune -f
+//                     docker system prune -f --volumes
+//                 '''
+                
+//                 // Archive build artifacts
+//                 archiveArtifacts artifacts: '**/*.log', fingerprint: true, allowEmptyArchive: true
+                
+//                 // Publish test results if they exist
+//                 publishTestResults testResultsPattern: '**/test-results.xml', allowEmptyResults: true
+//             }
+//         }
+        
+//         success {
+//             script {
+//                 notifyBuildSuccess()
+                
+//                 // Update deployment status
+//                 if (params.DEPLOY_ENVIRONMENT) {
+//                     updateDeploymentStatus('success', params.DEPLOY_ENVIRONMENT)
+//                 }
+//             }
+//         }
+        
+//         failure {
+//             script {
+//                 notifyBuildFailure()
+                
+//                 // Update deployment status
+//                 if (params.DEPLOY_ENVIRONMENT) {
+//                     updateDeploymentStatus('failure', params.DEPLOY_ENVIRONMENT)
+//                 }
+                
+//                 // Rollback on production failure
+//                 if (params.DEPLOY_ENVIRONMENT == 'production') {
+//                     rollbackProduction()
+//                 }
+//             }
+//         }
+        
+//         unstable {
+//             script {
+//                 notifyBuildUnstable()
+//             }
+//         }
+        
+//         aborted {
+//             script {
+//                 notifyBuildAborted()
+//             }
+//         }
+//     }
+// }
+
+// // Helper Functions
+// def loadEnvironmentConfig() {
+//     script {
+//         def configFile = "jenkins/environments/${params.DEPLOY_ENVIRONMENT}.properties"
+//         if (fileExists(configFile)) {
+//             def props = readProperties file: configFile
+//             props.each { key, value ->
+//                 env[key] = value
+//             }
+//         }
+//     }
+// }
+
+// def deployToEnvironment(environment) {
+//     echo "🚀 Deploying CLMS to ${environment} environment"
+    
+//     withCredentials([
+//         kubeconfigFile(credentialsId: "k8s-${environment}-config", variable: 'KUBECONFIG'),
+//         string(credentialsId: "app-key-${environment}", variable: 'APP_KEY'),
+//         string(credentialsId: "db-password-${environment}", variable: 'DB_PASSWORD'),
+//         string(credentialsId: "redis-password-${environment}", variable: 'REDIS_PASSWORD')
+//     ]) {
+//         script {
+//             // Deploy using Helm or kubectl
+//             if (params.DEPLOY_BACKEND) {
+//                 sh """
+//                     helm upgrade --install clms-backend ./helm/backend \
+//                         --namespace ${environment} \
+//                         --create-namespace \
+//                         --set image.tag=${BUILD_NUMBER} \
+//                         --set environment=${environment} \
+//                         --set app.key=\${APP_KEY} \
+//                         --set database.password=\${DB_PASSWORD} \
+//                         --set redis.password=\${REDIS_PASSWORD} \
+//                         --wait --timeout=10m
+//                 """
+//             }
+            
+//             if (params.DEPLOY_FRONTEND) {
+//                 sh """
+//                     helm upgrade --install clms-frontend ./helm/frontend \
+//                         --namespace ${environment} \
+//                         --create-namespace \
+//                         --set image.tag=${BUILD_NUMBER} \
+//                         --set environment=${environment} \
+//                         --wait --timeout=10m
+//                 """
+//             }
+//         }
+//     }
+// }
+
+// def runHealthChecks(environment) {
+//     echo "🏥 Running health checks for ${environment}"
+    
+//     script {
+//         def backendUrl = getServiceUrl('backend', environment)
+//         def frontendUrl = getServiceUrl('frontend', environment)
+        
+//         // Backend health check
+//         if (params.DEPLOY_BACKEND) {
+//             retry(5) {
+//                 sleep(10)
+//                 sh "curl -f ${backendUrl}/health || exit 1"
+//             }
+//         }
+        
+//         // Frontend health check
+//         if (params.DEPLOY_FRONTEND) {
+//             retry(5) {
+//                 sleep(10)
+//                 sh "curl -f ${frontendUrl} || exit 1"
+//             }
+//         }
+//     }
+// }
+
+// def runSmokeTests(environment) {
+//     echo "💨 Running smoke tests for ${environment}"
+    
+//     script {
+//         sh """
+//             docker run --rm \
+//                 -e TEST_ENVIRONMENT=${environment} \
+//                 -e BACKEND_URL=\$(kubectl get service clms-backend -n ${environment} -o jsonpath='{.status.loadBalancer.ingress[0].ip}') \
+//                 -e FRONTEND_URL=\$(kubectl get service clms-frontend -n ${environment} -o jsonpath='{.status.loadBalancer.ingress[0].ip}') \
+//                 ${PROJECT_NAME}-smoke-tests:latest
+//         """
+//     }
+// }
+
+// def runPerformanceTests(environment) {
+//     echo "⚡ Running performance tests for ${environment}"
+    
+//     script {
+//         sh """
+//             docker run --rm \
+//                 -e TEST_ENVIRONMENT=${environment} \
+//                 -v \$(pwd)/performance-results:/results \
+//                 ${PROJECT_NAME}-performance-tests:latest
+//         """
+        
+//         // Archive performance results
+//         archiveArtifacts artifacts: 'performance-results/**/*', fingerprint: true
+//     }
+// }
+
+// def getServiceUrl(service, environment) {
+//     return sh(
+//         script: "kubectl get service clms-${service} -n ${environment} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'",
+//         returnStdout: true
+//     ).trim()
+// }
+
+// def updateDeploymentStatus(status, environment) {
+//     // Update deployment tracking system
+//     echo "📊 Updating deployment status: ${status} for ${environment}"
+// }
+
+// def rollbackProduction() {
+//     echo "🔄 Rolling back production deployment"
+    
+//     withCredentials([kubeconfigFile(credentialsId: 'k8s-production-config', variable: 'KUBECONFIG')]) {
+//         sh '''
+//             helm rollback clms-backend --namespace production
+//             helm rollback clms-frontend --namespace production
+//         '''
+//     }
+// }
+
+// def notifyBuildStart() {
+//     slackSend(
+//         channel: '#clms-deployments',
+//         color: 'warning',
+//         message: "🚀 CLMS Build Started - Build #${BUILD_NUMBER} | Branch: ${env.BRANCH_NAME} | Environment: ${params.DEPLOY_ENVIRONMENT}"
+//     )
+// }
+
+// def notifyBuildSuccess() {
+//     slackSend(
+//         channel: '#clms-deployments',
+//         color: 'good',
+//         message: "✅ CLMS Build Successful - Build #${BUILD_NUMBER} | Branch: ${env.BRANCH_NAME} | Environment: ${params.DEPLOY_ENVIRONMENT} | Duration: ${currentBuild.durationString}"
+//     )
+// }
+
+// def notifyBuildFailure() {
+//     slackSend(
+//         channel: '#clms-deployments',
+//         color: 'danger',
+//         message: "❌ CLMS Build Failed - Build #${BUILD_NUMBER} | Branch: ${env.BRANCH_NAME} | Environment: ${params.DEPLOY_ENVIRONMENT} | Check: ${BUILD_URL}"
+//     )
+// }
+
+// def notifyBuildUnstable() {
+//     slackSend(
+//         channel: '#clms-deployments',
+//         color: 'warning',
+//         message: "⚠️ CLMS Build Unstable - Build #${BUILD_NUMBER} | Branch: ${env.BRANCH_NAME} | Environment: ${params.DEPLOY_ENVIRONMENT}"
+//     )
+// }
+
+// def notifyBuildAborted() {
+//     slackSend(
+//         channel: '#clms-deployments',
+//         color: '#439FE0',
+//         message: "🛑 CLMS Build Aborted - Build #${BUILD_NUMBER} | Branch: ${env.BRANCH_NAME} | Environment: ${params.DEPLOY_ENVIRONMENT}"
+//     )
+// }

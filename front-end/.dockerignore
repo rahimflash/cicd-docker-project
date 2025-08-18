@@ -1,0 +1,36 @@
+# Node modules (reinstalled in container)
+node_modules
+
+# Local build outputs
+.next
+out
+dist
+
+# Logs
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+*.log
+
+# Git and Docker junk
+.git
+.gitignore
+.dockerignore
+Dockerfile
+
+# Env files (handled via Docker secrets or runtime envs)
+.env
+.env.*
+!.env.example
+
+# IDE and system files
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Tests and coverage (not needed in prod image)
+tests
+coverage

@@ -1,0 +1,42 @@
+# Node modules (rebuilt in container)
+node_modules
+
+# Composer vendor (installed in container)
+vendor
+
+# Build artifacts
+public/storage
+public/hot
+storage/framework/*
+storage/logs/*
+
+# Logs
+*.log
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Git and Docker metadata
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose*.yml
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+
+# IDE and system junk
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Tests and coverage
+tests
+coverage
+.phpunit.result.cache

@@ -1,0 +1,63 @@
+services:
+  frontend:
+    build: ./front-end
+    network_mode: "host"
+    env_file:
+      - ./front-end/.env.local
+    volumes:
+      - ./front-end:/app
+      - /app/node_modules
+    restart: unless-stopped
+    depends_on:
+      - backend
+  
+  backend:
+    build: ./back-end
+    container_name: laravel_app
+    network_mode: "host"
+    env_file:
+      - ./back-end/.env
+    volumes:
+      - ./back-end:/home/app
+    restart: unless-stopped
+    depends_on:
+      - database
+      - redis
+
+  database:
+    image: postgres:15
+    network_mode: "host"
+    env_file:
+      - .env
+    environment:
+    #   POSTGRES_DB: clms
+    #   POSTGRES_USER: postgresuser
+    #   POSTGRES_PASSWORD: postgresuser12345
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgresuser}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: clms_redis
+    network_mode: "host"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis123}
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+
+volumes:
+  postgres_data:
+  redis_data:
