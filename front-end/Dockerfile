@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 # Install dependencies
-RUN npm ci --only=production --frozen-lockfile
+RUN npm ci --omit=dev
 
 # Stage 2: Builder
 FROM node:18-alpine AS builder
@@ -48,16 +48,16 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 USER nextjs
 
 # Expose port
-EXPOSE 3001
+EXPOSE 3000
 
 # Set default environment variables
-ENV PORT 3001
+ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 ENV APP_NAME "CLMS"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3001/api/health || exit 1
+  CMD curl -f http://localhost:3000/api/health || exit 1
 
 # Start the application
 CMD ["node", "server.js"]
