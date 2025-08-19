@@ -235,7 +235,9 @@ pipeline {
                         
                         stage('Backend Tests') {
                             when {
-                                not { params.SKIP_TESTS }
+                                not {
+                                    expression { params.SKIP_TESTS }
+                                }
                             }
                             steps {
                                 dir("${BACKEND_PATH}") {
@@ -313,7 +315,9 @@ pipeline {
                         
                         stage('Frontend Tests') {
                             when {
-                                not { params.SKIP_TESTS }
+                                not {
+                                    expression { params.SKIP_TESTS }
+                                }
                             }
                             steps {
                                 dir("${FRONTEND_PATH}") {
@@ -566,8 +570,10 @@ EOF
             when {
                 allOf {
                     expression { params.DEPLOY_LOCALLY }
-                    not { params.SKIP_TESTS }
+                    not {
+                        expression { params.SKIP_TESTS }
                 }
+             }
             }
             steps {
                 script {
