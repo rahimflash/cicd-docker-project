@@ -49,8 +49,8 @@ COPY --from=builder /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Install only production dependencies
-RUN npm ci --omit=dev --ignore-scripts
+# # Install only production dependencies
+# RUN npm ci --omit=dev --ignore-scripts
 
 # Switch to non-root user
 USER nextjs
