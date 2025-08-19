@@ -9,7 +9,8 @@ COPY package.json package-lock.json* ./
 
 
 # Install all dependencies (including dev, needed for build)
-RUN npm ci --include=dev --ignore-scripts
+# RUN npm ci --include=dev --ignore-scripts
+RUN npm install --legacy-peer-deps
 
 # Stage 2: Builder
 FROM node:18-alpine AS builder
@@ -21,7 +22,6 @@ COPY . .
 
 # Disable Next.js telemetry
 ENV NEXT_TELEMETRY_DISABLED 1
-ENV IRON_SESSION_PASSWORD="dummy"
 
 # Build the application
 RUN npm run build
