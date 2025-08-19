@@ -47,7 +47,11 @@ jobs:
       - name: Build application
         run: npm run build
         env:
+          SECRET_COOKIE_PASSWORD: ${{ secrets.SECRET_COOKIE_PASSWORD }}
+          TINY_MCE_API_KEY: ${{ secrets.TINY_MCE_API_KEY }}
+          BACKEND_API_HOST: ${{ secrets.BACKEND_API_HOST }}
           NODE_ENV: production
+
 
   # Job 2: Security Scan
   security-scan:
