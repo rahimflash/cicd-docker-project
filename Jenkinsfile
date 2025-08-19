@@ -4,10 +4,8 @@ pipeline {
     agent any
     
     environment {
-        // Docker Hub configuration
-        DOCKER_HUB_CREDENTIALS = credentials('docker-hub-credentials')
-        DOCKER_HUB_USERNAME = "${DOCKER_HUB_CREDENTIALS_USR}"
-        DOCKER_HUB_PASSWORD = "${DOCKER_HUB_CREDENTIALS_PSW}"
+        // Docker Hub configuration - removed credentials() usage
+        // Will be handled with withCredentials in the push stage
         
         // Project configuration
         PROJECT_NAME = 'clms'
@@ -19,9 +17,9 @@ pipeline {
         NODE_VERSION = '18'
         PHP_VERSION = '8.1'
         
-        // Docker image names (Docker Hub)
-        BACKEND_IMAGE = "${DOCKER_HUB_USERNAME}/${PROJECT_NAME}-backend"
-        FRONTEND_IMAGE = "${DOCKER_HUB_USERNAME}/${PROJECT_NAME}-frontend"
+        // Docker image names (Docker Hub) - will use username from withCredentials
+        BACKEND_IMAGE = "${PROJECT_NAME}-backend"
+        FRONTEND_IMAGE = "${PROJECT_NAME}-frontend"
         
         // Mono-repo paths
         BACKEND_PATH = 'back-end'
@@ -106,23 +104,23 @@ pipeline {
                     
                     // Show mono-repo structure
                     sh '''
-                        echo "  Mono-repo structure:"
+                        echo "Mono-repo structure:"
                         ls -la
-                        echo "  Backend structure:"
+                        echo "Backend structure:"
                         ls -la ${BACKEND_PATH}/
-                        echo "  Frontend structure:"
+                        echo "Frontend structure:"
                         ls -la ${FRONTEND_PATH}/
                     '''
                     
                     echo """
-   Starting CLMS Mono-repo Build Pipeline
-   Build Number: ${BUILD_NUMBER}
-   Branch: ${env.BRANCH_NAME}
-   Build Type: ${params.BUILD_TYPE}
-   Backend: ${params.BUILD_BACKEND}
-   Frontend: ${params.BUILD_FRONTEND}
-   Push to Hub: ${params.PUSH_TO_HUB}
-   Deploy Locally: ${params.DEPLOY_LOCALLY}
+Starting CLMS Mono-repo Build Pipeline
+Build Number: ${BUILD_NUMBER}
+Branch: ${env.BRANCH_NAME}
+Build Type: ${params.BUILD_TYPE}
+Backend: ${params.BUILD_BACKEND}
+Frontend: ${params.BUILD_FRONTEND}
+Push to Hub: ${params.PUSH_TO_HUB}
+Deploy Locally: ${params.DEPLOY_LOCALLY}
 """
                 }
             }
@@ -140,9 +138,9 @@ pipeline {
                                 // Check if .env exists
                                 sh '''
                                     if [ -f .env ]; then
-                                        echo "   Backend .env file found"
+                                        echo "Backend .env file found"
                                     else
-                                        echo "   Backend .env file not found"
+                                        echo "Backend .env file not found"
                                     fi
                                 '''
                                 
@@ -170,9 +168,9 @@ pipeline {
                                 // Check if .env.local exists
                                 sh '''
                                     if [ -f .env.local ]; then
-                                        echo " Frontend .env.local file found"
+                                        echo "Frontend .env.local file found"
                                     else
-                                        echo " Frontend .env.local file not found"
+                                        echo "Frontend .env.local file not found"
                                     fi
                                 '''
                                 
@@ -191,7 +189,7 @@ pipeline {
                         script {
                             // Basic secret scanning (excluding .env files)
                             sh '''
-                                echo " Scanning for exposed secrets..."
+                                echo "Scanning for exposed secrets..."
                                 # Check for common secret patterns in code (not .env files)
                                 find . -name "*.php" -o -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" | \
                                     xargs grep -l -i "password.*=" || true
@@ -269,7 +267,7 @@ pipeline {
                                     script {
                                         // Basic quality checks
                                         sh '''
-                                            echo " Running backend quality checks..."
+                                            echo "Running backend quality checks..."
                                             # Check for TODO/FIXME comments
                                             grep -r -i "todo\\|fixme" . --exclude-dir=vendor || true
                                             
@@ -325,10 +323,10 @@ pipeline {
                                         // Check if package.json exists
                                         sh '''
                                             if [ -f package.json ]; then
-                                                echo " package.json found"
+                                                echo "package.json found"
                                                 cat package.json | grep -A 5 -B 5 "scripts" || true
                                             else
-                                                echo " package.json not found"
+                                                echo "package.json not found"
                                             fi
                                         '''
                                         
@@ -360,7 +358,7 @@ pipeline {
                                     script {
                                         // Basic quality checks
                                         sh '''
-                                            echo " Running frontend quality checks..."
+                                            echo "Running frontend quality checks..."
                                             # Check for console.log statements
                                             grep -r "console\\.log" . --exclude-dir=node_modules || true
                                             
@@ -439,39 +437,64 @@ pipeline {
             }
             steps {
                 script {
-                    // Login to Docker Hub
-                    sh """
-                        echo '${DOCKER_HUB_PASSWORD}' | docker login -u '${DOCKER_HUB_USERNAME}' --password-stdin
-                    """
-                    
-                    try {
-                        parallel(
-                            "Push Backend": {
-                                if (params.BUILD_BACKEND) {
-                                    echo " Pushing backend images to Docker Hub..."
-                                    sh """
-                                        docker push ${BACKEND_IMAGE}:${BUILD_NUMBER}
-                                        docker push ${BACKEND_IMAGE}:latest
-                                        docker push ${BACKEND_IMAGE}:${params.BUILD_TYPE}
-                                    """
-                                    echo " Backend images pushed successfully"
+                    // Use withCredentials instead of credentials()
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-hub-credentials',
+                        usernameVariable: 'DOCKER_HUB_USERNAME',
+                        passwordVariable: 'DOCKER_HUB_PASSWORD'
+                    )]) {
+                        // Login to Docker Hub
+                        sh """
+                            echo '${DOCKER_HUB_PASSWORD}' | docker login -u '${DOCKER_HUB_USERNAME}' --password-stdin
+                        """
+                        
+                        try {
+                            parallel(
+                                "Push Backend": {
+                                    if (params.BUILD_BACKEND) {
+                                        echo "Pushing backend images to Docker Hub..."
+                                        
+                                        // Tag images with username prefix
+                                        sh """
+                                            docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER} ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${BUILD_NUMBER}
+                                            docker tag ${BACKEND_IMAGE}:latest ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:latest
+                                            docker tag ${BACKEND_IMAGE}:${params.BUILD_TYPE} ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${params.BUILD_TYPE}
+                                        """
+                                        
+                                        // Push images
+                                        sh """
+                                            docker push ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${BUILD_NUMBER}
+                                            docker push ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:latest
+                                            docker push ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${params.BUILD_TYPE}
+                                        """
+                                        echo "Backend images pushed successfully"
+                                    }
+                                },
+                                "Push Frontend": {
+                                    if (params.BUILD_FRONTEND) {
+                                        echo "Pushing frontend images to Docker Hub..."
+                                        
+                                        // Tag images with username prefix
+                                        sh """
+                                            docker tag ${FRONTEND_IMAGE}:${BUILD_NUMBER} ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                                            docker tag ${FRONTEND_IMAGE}:latest ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:latest
+                                            docker tag ${FRONTEND_IMAGE}:${params.BUILD_TYPE} ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${params.BUILD_TYPE}
+                                        """
+                                        
+                                        // Push images
+                                        sh """
+                                            docker push ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                                            docker push ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:latest
+                                            docker push ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${params.BUILD_TYPE}
+                                        """
+                                        echo "Frontend images pushed successfully"
+                                    }
                                 }
-                            },
-                            "Push Frontend": {
-                                if (params.BUILD_FRONTEND) {
-                                    echo " Pushing frontend images to Docker Hub..."
-                                    sh """
-                                        docker push ${FRONTEND_IMAGE}:${BUILD_NUMBER}
-                                        docker push ${FRONTEND_IMAGE}:latest
-                                        docker push ${FRONTEND_IMAGE}:${params.BUILD_TYPE}
-                                    """
-                                    echo " Frontend images pushed successfully"
-                                }
-                            }
-                        )
-                    } finally {
-                        // Logout from Docker Hub
-                        sh "docker logout"
+                            )
+                        } finally {
+                            // Logout from Docker Hub
+                            sh "docker logout"
+                        }
                     }
                 }
             }
@@ -483,24 +506,24 @@ pipeline {
             }
             steps {
                 script {
-                    echo " Deploying to local Docker environment..."
+                    echo "Deploying to local Docker environment..."
                     
                     // Verify .env files exist
                     sh '''
-                        echo " Checking environment files..."
+                        echo "Checking environment files..."
                         if [ -f ${BACKEND_PATH}/.env ]; then
-                            echo " Backend .env found"
+                            echo "Backend .env found"
                         else
-                            echo " Backend .env not found - creating from example"
+                            echo "Backend .env not found - creating from example"
                             if [ -f ${BACKEND_PATH}/.env.example ]; then
                                 cp ${BACKEND_PATH}/.env.example ${BACKEND_PATH}/.env
                             fi
                         fi
                         
                         if [ -f ${FRONTEND_PATH}/.env.local ]; then
-                            echo " Frontend .env.local found"
+                            echo "Frontend .env.local found"
                         else
-                            echo " Frontend .env.local not found - creating from example"
+                            echo "Frontend .env.local not found - creating from example"
                             if [ -f ${FRONTEND_PATH}/.env.example ]; then
                                 cp ${FRONTEND_PATH}/.env.example ${FRONTEND_PATH}/.env.local
                             fi
@@ -535,31 +558,31 @@ EOF
                     
                     // Verify deployment
                     sh '''
-                        echo "🩺 Checking local deployment health..."
+                        echo "Checking local deployment health..."
                         
                         # Check if containers are running
                         docker-compose ps
                         
                         # Check PostgreSQL
                         if docker-compose exec -T database pg_isready; then
-                            echo " PostgreSQL is healthy"
+                            echo "PostgreSQL is healthy"
                         else
-                            echo " PostgreSQL health check failed"
+                            echo "PostgreSQL health check failed"
                         fi
                         
                         # Check backend health (assuming it runs on port 8000)
                         sleep 10
                         if curl -f http://localhost:8000 2>/dev/null || curl -f http://localhost:80 2>/dev/null; then
-                            echo " Backend is responding"
+                            echo "Backend is responding"
                         else
-                            echo " Backend not responding on expected ports"
+                            echo "Backend not responding on expected ports"
                         fi
                         
                         # Check frontend health (assuming it runs on port 3000)
                         if curl -f http://localhost:3000 2>/dev/null; then
-                            echo " Frontend is responding"
+                            echo "Frontend is responding"
                         else
-                            echo " Frontend not responding on port 3000"
+                            echo "Frontend not responding on port 3000"
                         fi
                     '''
                 }
@@ -572,12 +595,12 @@ EOF
                     expression { params.DEPLOY_LOCALLY }
                     not {
                         expression { params.SKIP_TESTS }
+                    }
                 }
-             }
             }
             steps {
                 script {
-                    echo " Running integration tests..."
+                    echo "Running integration tests..."
                     
                     // Basic integration tests
                     sh '''
@@ -586,27 +609,27 @@ EOF
                         # Test backend endpoints
                         for port in 8000 80; do
                             if curl -f http://localhost:$port 2>/dev/null; then
-                                echo " Backend responding on port $port"
+                                echo "Backend responding on port $port"
                                 break
                             fi
                         done
                         
                         # Test frontend
                         if curl -f http://localhost:3000 2>/dev/null; then
-                            echo " Frontend responding on port 3000"
+                            echo "Frontend responding on port 3000"
                         fi
                         
                         # Test database connection (if backend provides health endpoint)
                         if curl -f http://localhost:8000/health 2>/dev/null; then
-                            echo " Backend health endpoint working"
+                            echo "Backend health endpoint working"
                         elif curl -f http://localhost:80/health 2>/dev/null; then
-                            echo " Backend health endpoint working"
+                            echo "Backend health endpoint working"
                         else
-                            echo "  No health endpoint found"
+                            echo "No health endpoint found"
                         fi
                         
                         # Show container logs for debugging
-                        echo " Container status:"
+                        echo "Container status:"
                         docker-compose ps
                     '''
                 }
@@ -634,14 +657,14 @@ EOF
                 
                 // Show final status
                 echo """
-   Build Summary:
-   Build Number: ${BUILD_NUMBER}
-   Git Commit: ${GIT_COMMIT_SHORT}
-   Build Type: ${params.BUILD_TYPE}
-   Backend Built: ${params.BUILD_BACKEND}
-   Frontend Built: ${params.BUILD_FRONTEND}
-   Pushed to Hub: ${params.PUSH_TO_HUB}
-   Deployed Locally: ${params.DEPLOY_LOCALLY}
+Build Summary:
+Build Number: ${BUILD_NUMBER}
+Git Commit: ${GIT_COMMIT_SHORT}
+Build Type: ${params.BUILD_TYPE}
+Backend Built: ${params.BUILD_BACKEND}
+Frontend Built: ${params.BUILD_FRONTEND}
+Pushed to Hub: ${params.PUSH_TO_HUB}
+Deployed Locally: ${params.DEPLOY_LOCALLY}
 """
             }
         }
@@ -649,27 +672,34 @@ EOF
         success {
             script {
                 echo """
-   CLMS Mono-repo Build Successful!
-   Build Number: ${BUILD_NUMBER}
-   Branch: ${env.BRANCH_NAME}
-   Build Type: ${params.BUILD_TYPE}
-   Duration: ${currentBuild.durationString}
+CLMS Mono-repo Build Successful!
+Build Number: ${BUILD_NUMBER}
+Branch: ${env.BRANCH_NAME}
+Build Type: ${params.BUILD_TYPE}
+Duration: ${currentBuild.durationString}
 """
                 
                 if (params.PUSH_TO_HUB) {
-                    echo """
-   Images successfully pushed to Docker Hub:
-   Backend: ${BACKEND_IMAGE}:${BUILD_NUMBER}
-   Frontend: ${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                    // Access the username from the last withCredentials block
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-hub-credentials',
+                        usernameVariable: 'DOCKER_HUB_USERNAME',
+                        passwordVariable: 'DOCKER_HUB_PASSWORD'
+                    )]) {
+                        echo """
+Images successfully pushed to Docker Hub:
+Backend: ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${BUILD_NUMBER}
+Frontend: ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${BUILD_NUMBER}
 """
+                    }
                 }
                 
                 if (params.DEPLOY_LOCALLY) {
                     echo """
-   Local deployment successful:
-   Backend: Check http://localhost:8000 or http://localhost:80
-   Frontend: http://localhost:3000
-   Database: PostgreSQL on localhost:5432
+Local deployment successful:
+Backend: Check http://localhost:8000 or http://localhost:80
+Frontend: http://localhost:3000
+Database: PostgreSQL on localhost:5432
 """
                 }
             }
@@ -678,17 +708,17 @@ EOF
         failure {
             script {
                 echo """
-   CLMS Build Failed
-   Build Number: ${BUILD_NUMBER}
-   Branch: ${env.BRANCH_NAME}
-   Build Type: ${params.BUILD_TYPE}
-   Check logs: ${BUILD_URL}console
+CLMS Build Failed
+Build Number: ${BUILD_NUMBER}
+Branch: ${env.BRANCH_NAME}
+Build Type: ${params.BUILD_TYPE}
+Check logs: ${BUILD_URL}console
 """
                 
                 // Show container logs for debugging
                 if (params.DEPLOY_LOCALLY) {
                     sh '''
-                        echo " Container logs for debugging:"
+                        echo "Container logs for debugging:"
                         docker-compose logs --tail=50 || true
                     '''
                 }
@@ -698,11 +728,11 @@ EOF
         unstable {
             script {
                 echo """
-   CLMS Build Unstable
-   Build Number: ${BUILD_NUMBER}
-   Branch: ${env.BRANCH_NAME}
-   Build Type: ${params.BUILD_TYPE}
-   Some tests may have failed
+CLMS Build Unstable
+Build Number: ${BUILD_NUMBER}
+Branch: ${env.BRANCH_NAME}
+Build Type: ${params.BUILD_TYPE}
+Some tests may have failed
 """
             }
         }
@@ -710,10 +740,10 @@ EOF
         aborted {
             script {
                 echo """
-   CLMS Build Aborted
-   Build Number: ${BUILD_NUMBER}
-   Branch: ${env.BRANCH_NAME}
-   Build Type: ${params.BUILD_TYPE}
+CLMS Build Aborted
+Build Number: ${BUILD_NUMBER}
+Branch: ${env.BRANCH_NAME}
+Build Type: ${params.BUILD_TYPE}
 """
                 
                 // Clean up any running containers
