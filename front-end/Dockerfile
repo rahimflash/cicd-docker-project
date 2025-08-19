@@ -21,6 +21,7 @@ COPY . .
 
 # Disable Next.js telemetry
 ENV NEXT_TELEMETRY_DISABLED 1
+ENV IRON_SESSION_PASSWORD="dummy"
 
 # Build the application
 RUN npm run build
