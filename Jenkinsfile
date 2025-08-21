@@ -100,7 +100,7 @@ pipeline {
                     
                     // Verify Docker is available
                     sh 'docker --version'
-                    sh 'docker-compose --version'
+                    sh 'docker compose --version'
                     
                     // Show mono-repo structure
                     sh '''
@@ -547,7 +547,7 @@ EOF
                     
                     // Stop existing containers
                     sh '''
-                        docker-compose down || true
+                        docker compose down || true
                     '''
                     
                     // Start new containers
@@ -563,7 +563,7 @@ EOF
                         echo "Checking local deployment health..."
                         
                         # Check if containers are running
-                        docker-compose ps
+                        docker compose ps
                         
                         # Check PostgreSQL
                         if docker-compose exec -T database pg_isready; then
@@ -632,7 +632,7 @@ EOF
                         
                         # Show container logs for debugging
                         echo "Container status:"
-                        docker-compose ps
+                        docker compose ps
                     '''
                 }
             }
@@ -730,7 +730,7 @@ Check logs: ${BUILD_URL}console
                 if (params.DEPLOY_LOCALLY) {
                     sh '''
                         echo "Container logs for debugging:"
-                        docker-compose logs --tail=50 || true
+                        docker compose logs --tail=50 || true
                     '''
                 }
             }
@@ -759,7 +759,7 @@ Build Type: ${params.BUILD_TYPE}
                 
                 // Clean up any running containers
                 sh '''
-                    docker-compose down || true
+                    docker compose down || true
                 '''
             }
         }
