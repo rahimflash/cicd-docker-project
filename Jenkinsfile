@@ -639,6 +639,13 @@ EOF
     
     post {
         always {
+            cleanWs(
+                cleanWhenAborted: true,
+                cleanWhenFailure: true,
+                cleanWhenNotBuilt: true,
+                cleanWhenSuccess: true,
+                deleteDirs: true
+            )
             script {
                 // Clean up Docker images
                 sh '''
