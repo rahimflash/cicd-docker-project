@@ -254,7 +254,9 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                         
                                         // Publish test results if they exist
                                         if (fileExists('test-results.xml')) {
-                                            publishTestResults testResultsPattern: 'test-results.xml'
+                                            junit testResults: 'test-results.xml', allowEmptyResults: true
+
+                                            // publishTestResults testResultsPattern: 'test-results.xml'
                                         }
                                     }
                                 }
@@ -660,7 +662,9 @@ EOF
                 archiveArtifacts artifacts: '**/*.log, **/*-report.json', fingerprint: true, allowEmptyArchive: true
                 
                 // Publish test results if they exist
-                publishTestResults testResultsPattern: '**/test-results.xml', allowEmptyResults: true
+                junit testResults: '**/test-results.xml', allowEmptyResults: true
+
+                // publishTestResults testResultsPattern: '**/test-results.xml', allowEmptyResults: true
                 
                 // Show final status
                 echo """
