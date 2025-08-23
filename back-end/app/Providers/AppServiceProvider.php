@@ -11,7 +11,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        if ($this->app->environment('local')) {
+            if (class_exists(\Knuckles\Scribe\ScribeServiceProvider::class)) {
+                $this->app->register(\Knuckles\Scribe\ScribeServiceProvider::class);
+            }
+        }
     }
 
     /**

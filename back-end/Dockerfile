@@ -52,8 +52,8 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install Node dependencies
-RUN npm ci --only=production
+# Install Node dependencies (including dev)
+RUN npm ci
 
 # Copy source files for asset building
 COPY . .
@@ -128,6 +128,9 @@ COPY ./dockerfiles/nginx/default.conf /etc/nginx/http.d/default.conf
 # COPY ./docker/supervisor/supervisord.conf /etc/supervisord.conf
 COPY ./entrypoint.sh /entrypoint.sh
 
+ENV APP_ENV=production
+ENV APP_DEBUG=false
+
 # Set permissions
 RUN chown -R clms:clms /var/www/html \
     && chmod -R 755 /var/www/html/storage \
@@ -142,13 +145,15 @@ RUN mkdir -p /var/log/nginx \
     && chown -R clms:clms /var/log/supervisor \
     && chown -R clms:clms /run/nginx
 
+# # Optimize Laravel for production
+# RUN php artisan config:clear \
+#     && php artisan cache:clear \
+#     && php artisan config:cache \
+#     && php artisan route:cache \
+#     && php artisan view:cache
+    
 # Switch to application user
 USER clms
-
-# Optimize Laravel for production
-RUN php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache
     
 # Expose port
 EXPOSE 8000
