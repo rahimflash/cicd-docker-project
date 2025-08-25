@@ -42,9 +42,6 @@ services:
     env_file:
       - .env
     environment:
-      # POSTGRES_DB: clms
-      # POSTGRES_USER: postgresuser
-      # POSTGRES_PASSWORD: postgresuser12345
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
