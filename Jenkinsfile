@@ -108,28 +108,30 @@ pipeline {
                     
                     // Verify Docker is available
                     sh 'docker --version'
-                    sh 'docker compose version'
+                    sh 'docker compose --version'
                     
                     // Detect changes in directories
                     echo "Detecting changes in mono-repo directories..."
                     
+                    // Initialize variables
+                    def backendChanged = false
+                    def frontendChanged = false
+                    
                     // Handle force build parameters first
                     if (params.FORCE_BUILD_ALL) {
-                        env.FORCE_BUILD_BACKEND = 'true'
-                        env.FORCE_BUILD_FRONTEND = 'true'
+                        backendChanged = true
+                        frontendChanged = true
                         echo "Force build all enabled - will build both backend and frontend"
                     } else if (params.FORCE_BACKEND_ONLY) {
-                        env.FORCE_BUILD_BACKEND = 'true'
-                        env.FORCE_BUILD_FRONTEND = 'false'
+                        backendChanged = true
+                        frontendChanged = false
                         echo "Force backend only enabled - will build backend only"
                     } else if (params.FORCE_FRONTEND_ONLY) {
-                        env.FORCE_BUILD_BACKEND = 'false'
-                        env.FORCE_BUILD_FRONTEND = 'true'
+                        backendChanged = false
+                        frontendChanged = true
                         echo "Force frontend only enabled - will build frontend only"
                     } else {
-                        // Auto-detect changes
-                        def backendChanged = false
-                        def frontendChanged = false
+                        echo "Auto-detecting changes..."
                         
                         // Check if this is the first build or if we can detect changes
                         try {
@@ -200,13 +202,13 @@ pipeline {
                             backendChanged = true
                             frontendChanged = true
                         }
-                        
-                        // Set environment variables
-                        env.BACKEND_CHANGED = backendChanged.toString()
-                        env.FRONTEND_CHANGED = frontendChanged.toString()
-                        env.FORCE_BUILD_BACKEND = backendChanged.toString()
-                        env.FORCE_BUILD_FRONTEND = frontendChanged.toString()
                     }
+                    
+                    // Set environment variables (outside of conditional blocks)
+                    env.BACKEND_CHANGED = backendChanged.toString()
+                    env.FRONTEND_CHANGED = frontendChanged.toString()
+                    env.FORCE_BUILD_BACKEND = backendChanged.toString()
+                    env.FORCE_BUILD_FRONTEND = frontendChanged.toString()
                     
                     // Show mono-repo structure
                     sh '''
@@ -783,9 +785,11 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                         echo "Testing application endpoints..."
                         
                         # Test backend endpoints
-                        if curl -f http://localhost:8000 2>/dev/null; then
-                            echo "Backend responding on port $port"
-                        fi
+                        for port in 8000 80; do
+                            if curl -f http://localhost:$port 2>/dev/null; then
+                                echo "Backend responding on port $port"
+                                break
+                            fi
                         done
                         
                         # Test frontend
@@ -795,6 +799,8 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                         
                         # Test database connection (if backend provides health endpoint)
                         if curl -f http://localhost:8000/health 2>/dev/null; then
+                            echo "Backend health endpoint working"
+                        elif curl -f http://localhost:80/health 2>/dev/null; then
                             echo "Backend health endpoint working"
                         else
                             echo "No health endpoint found"
@@ -891,7 +897,7 @@ ${pushedImages.join('\n')}
                 if (params.DEPLOY_LOCALLY && (backendBuilt || frontendBuilt)) {
                     echo """
 Local deployment successful:
-Backend: Check http://localhost:8000
+Backend: Check http://localhost:8000 or http://localhost:80
 Frontend: http://localhost:3000
 Database: PostgreSQL on localhost:5432
 """
