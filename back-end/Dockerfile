@@ -1,87 +1,44 @@
-# Multi-stage Dockerfile for Laravel Backend (CLMS)
-# Stage 1: Composer Dependencies
-FROM composer:2.7 AS composer-stage
+# =======================
+# Base PHP Image with Extensions (Cached)
+# =======================
+FROM php:8.3-fpm-alpine3.20 AS php-extensions
 
-WORKDIR /app
-
-# Copy composer files
-COPY composer.json ./
-
-# Debug: Show PHP version and composer info
-RUN php -v
-RUN composer --version
-# RUN composer diagnose
-
-# Try to validate composer.json first
-RUN composer validate --no-check-all --strict
-
-# Update composer to latest version
-RUN composer self-update
-
-# Clear composer cache
-RUN composer clear-cache
-
-# Install dependencies with more verbose output and better error handling
-RUN composer install \
-    --no-dev \
-    --prefer-dist \
-    --no-interaction \
-    --optimize-autoloader \
-    --no-scripts \
-    --verbose \
-    || (echo "Composer install failed. Trying with --ignore-platform-reqs..." && \
-        composer install \
-        --no-dev \
-        --prefer-dist \
-        --no-interaction \
-        --optimize-autoloader \
-        --no-scripts \
-        --ignore-platform-reqs \
-        --verbose)
-
-
-# Generate autoloader
-COPY . .
-RUN composer dump-autoload --optimize --classmap-authoritative
-
-# Stage 2: Node Dependencies and Asset Building
-FROM node:18-alpine AS node-stage
-
-WORKDIR /app
-
-# Copy package files
-COPY package.json package-lock.json* ./
-
-# Install Node dependencies (including dev)
-RUN npm ci
-
-# Copy source files for asset building
-COPY . .
-COPY --from=composer-stage /app/vendor ./vendor
-
-# Build assets with Vite
-RUN npm run build
-
-# Stage 3: PHP Runtime
-FROM php:8.3-fpm-alpine3.20 AS php-base
-
-# Install system dependencies
-RUN apk add --no-cache \
+# Install all dependencies and PHP extensions once
+RUN --mount=type=cache,target=/var/cache/apk \
+    apk add --no-cache \
+    # Runtime dependencies
     curl \
     nginx \
     supervisor \
+    bash \
+    git \
     zip \
     unzip \
-    libpng-dev \
-    libjpeg-turbo-dev \
-    libzip-dev \
+    icu-libs \
+    oniguruma \
+    postgresql-libs \
+    libzip \
+    libpng \
+    libjpeg-turbo \
+    libwebp \
+    freetype \
+    shadow \
+    # Build dependencies (marked virtual for easy removal)
+    && apk add --no-cache --virtual .build-deps \
+    $PHPIZE_DEPS \
     icu-dev \
     oniguruma-dev \
     postgresql-dev \
-    && rm -rf /var/cache/apk/*
-
-# Install PHP extensions
-RUN docker-php-ext-configure gd --with-jpeg \
+    libzip-dev \
+    libpng-dev \
+    libjpeg-turbo-dev \
+    libwebp-dev \
+    freetype-dev \
+    # Configure and install PHP extensions
+    && docker-php-ext-configure gd \
+        --with-jpeg \
+        --with-freetype \
+        --with-webp \
     && docker-php-ext-install -j$(nproc) \
         pdo \
         pdo_mysql \
@@ -91,79 +48,120 @@ RUN docker-php-ext-configure gd --with-jpeg \
         exif \
         mbstring \
         intl \
-        opcache
-
-# Install Redis extension
-RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
+        opcache \
+    # Install Redis extension
     && pecl install redis \
     && docker-php-ext-enable redis \
-    && apk del .build-deps
+    # Clean up build dependencies
+    && apk del .build-deps \
+    && rm -rf /tmp/pear
 
-# Configure PHP for production
-# COPY ./docker/php/php.ini /usr/local/etc/php/conf.d/99-custom.ini
-# COPY ./docker/php/opcache.ini /usr/local/etc/php/conf.d/opcache.ini
+# =======================
+# Composer Dependencies
+# =======================
+FROM php-extensions AS composer-stage
 
-# Stage 4: Final Production Image
-FROM php-base AS production
+# Install Composer
+COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
 
-# Create application user
-RUN addgroup -g 1001 -S clms && \
-    adduser -S clms -u 1001 -G clms
+WORKDIR /app
 
-# Set working directory
+# Copy composer files first for better caching
+COPY composer.json composer.lock ./
+
+# Use BuildKit cache mount for composer cache
+RUN --mount=type=cache,target=/root/.composer/cache \
+    composer install \
+    # --no-dev \
+    --prefer-dist \
+    --no-interaction \
+    --optimize-autoloader \
+    --no-scripts \
+    --no-autoloader
+
+# Copy app source
+COPY . .
+
+# Generate optimized autoloader after copying all files
+RUN composer dump-autoload --optimize --classmap-authoritative
+
+# =======================
+# Node Dependencies & Assets
+# =======================
+FROM node:18-alpine AS node-stage
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Use BuildKit cache mount for npm cache
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit
+
+# Copy necessary files for building
+COPY . .
+
+# Copy vendor if needed for frontend build
+COPY --from=composer-stage /app/vendor ./vendor
+
+# Build assets
+RUN npm run build
+
+# =======================
+# Production Final Image
+# =======================
+FROM php-extensions AS production
+
 WORKDIR /var/www/html
 
-# Copy application code
+# Create non-root user
+RUN addgroup -g 1001 -S clms \
+    && adduser -S clms -u 1001 -G clms
+
+# Set environment
+ENV APP_ENV=production \
+    APP_DEBUG=false
+
+# Copy nginx config first (rarely changes)
+# COPY ./dockerfiles/nginx/default.conf /etc/nginx/http.d/default.conf
+
+# COPY ./dockerfiles/supervisord.conf /etc/supervisord.conf
+
+# Copy entrypoint
+COPY ./entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Prepare Nginx log directory with correct ownership
+# RUN mkdir -p /var/lib/nginx/logs \
+#     && chown -R clms:clms /var/lib/nginx
+
+# Copy application code with correct ownership
 COPY --chown=clms:clms . .
 
 # Copy vendor from composer stage
 COPY --from=composer-stage --chown=clms:clms /app/vendor ./vendor
 
-# Copy built assets from node stage
+# Copy built frontend assets
 COPY --from=node-stage --chown=clms:clms /app/public/build ./public/build
 
-# Copy configuration files
-# COPY ./docker/nginx/nginx.conf /etc/nginx/nginx.conf
-COPY ./dockerfiles/nginx/default.conf /etc/nginx/http.d/default.conf
-# COPY ./docker/supervisor/supervisord.conf /etc/supervisord.conf
-COPY ./entrypoint.sh /entrypoint.sh
+# Set permissions in a single layer
+RUN chmod -R 755 storage bootstrap/cache
 
-ENV APP_ENV=production
-ENV APP_DEBUG=false
-
-# Set permissions
-RUN chown -R clms:clms /var/www/html \
-    && chmod -R 755 /var/www/html/storage \
-    && chmod -R 755 /var/www/html/bootstrap/cache \
-    && chmod +x /entrypoint.sh
-
-# Create necessary directories
-RUN mkdir -p /var/log/nginx \
-    && mkdir -p /var/log/supervisor \
-    && mkdir -p /run/nginx \
-    && chown -R clms:clms /var/log/nginx \
-    && chown -R clms:clms /var/log/supervisor \
-    && chown -R clms:clms /run/nginx
-
-# # Optimize Laravel for production
-# RUN php artisan config:clear \
-#     && php artisan cache:clear \
-#     && php artisan config:cache \
+# Optional: Pre-cache Laravel (uncomment if needed)
+# RUN php artisan config:cache \
 #     && php artisan route:cache \
-#     && php artisan view:cache
-    
-# Switch to application user
+#     && php artisan view:cache \
+#     && php artisan event:cache
+
 USER clms
-    
-# Expose port
+
 EXPOSE 8000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Set entrypoint
 ENTRYPOINT ["/entrypoint.sh"]
+# CMD ["supervisord", "-c", "/etc/supervisord.conf"]
 
-# Default command
-CMD ["supervisord", "-c", "/etc/supervisord.conf"]
+CMD ["/entrypoint.sh"]

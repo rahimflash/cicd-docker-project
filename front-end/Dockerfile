@@ -21,6 +21,8 @@ ARG SECRET_COOKIE_PASSWORD=asde213nfdswefhd46rhfnshfk3jfjkldj3j2jkf
 ENV SECRET_COOKIE_PASSWORD=$SECRET_COOKIE_PASSWORD
 
 RUN npm run build
+RUN ls -R /app/.next/standalone || true
+RUN ls -R /app/.next || true
 
 # Stage 3: Production runner
 FROM node:18-alpine AS runner
@@ -36,6 +38,8 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Copy built application
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 
@@ -55,4 +59,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Start the application
 # CMD ["node", "server.js"]
-CMD ["node", ".next/standalone/server.js"]
+# CMD ["node", ".next/standalone/server.js"]
+CMD ["npm", "start"]

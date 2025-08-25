@@ -4,9 +4,6 @@ pipeline {
     agent any
     
     environment {
-        // Docker Hub configuration - removed credentials() usage
-        // Will be handled with withCredentials in the push stage
-        
         // Project configuration
         PROJECT_NAME = 'clms'
         BUILD_NUMBER = "${env.BUILD_NUMBER}"
@@ -24,6 +21,12 @@ pipeline {
         // Mono-repo paths
         BACKEND_PATH = 'back-end'
         FRONTEND_PATH = 'front-end'
+        
+        // Change detection variables (will be set dynamically)
+        BACKEND_CHANGED = 'false'
+        FRONTEND_CHANGED = 'false'
+        FORCE_BUILD_BACKEND = 'false'
+        FORCE_BUILD_FRONTEND = 'false'
     }
     
     options {
@@ -63,14 +66,19 @@ pipeline {
             description: 'Force rebuild without using Docker cache'
         )
         booleanParam(
-            name: 'BUILD_BACKEND',
-            defaultValue: true,
-            description: 'Build backend service'
+            name: 'FORCE_BUILD_ALL',
+            defaultValue: false,
+            description: 'Force build both frontend and backend regardless of changes'
         )
         booleanParam(
-            name: 'BUILD_FRONTEND',
-            defaultValue: true,
-            description: 'Build frontend service'
+            name: 'FORCE_BACKEND_ONLY',
+            defaultValue: false,
+            description: 'Force build backend only (override change detection)'
+        )
+        booleanParam(
+            name: 'FORCE_FRONTEND_ONLY',
+            defaultValue: false,
+            description: 'Force build frontend only (override change detection)'
         )
         booleanParam(
             name: 'PUSH_TO_HUB',
@@ -85,7 +93,7 @@ pipeline {
     }
     
     stages {
-        stage('Preparation') {
+        stage('Preparation & Change Detection') {
             steps {
                 script {
                     // Clean workspace
@@ -102,6 +110,104 @@ pipeline {
                     sh 'docker --version'
                     sh 'docker compose --version'
                     
+                    // Detect changes in directories
+                    echo "Detecting changes in mono-repo directories..."
+                    
+                    // Handle force build parameters first
+                    if (params.FORCE_BUILD_ALL) {
+                        env.FORCE_BUILD_BACKEND = 'true'
+                        env.FORCE_BUILD_FRONTEND = 'true'
+                        echo "Force build all enabled - will build both backend and frontend"
+                    } else if (params.FORCE_BACKEND_ONLY) {
+                        env.FORCE_BUILD_BACKEND = 'true'
+                        env.FORCE_BUILD_FRONTEND = 'false'
+                        echo "Force backend only enabled - will build backend only"
+                    } else if (params.FORCE_FRONTEND_ONLY) {
+                        env.FORCE_BUILD_BACKEND = 'false'
+                        env.FORCE_BUILD_FRONTEND = 'true'
+                        echo "Force frontend only enabled - will build frontend only"
+                    } else {
+                        // Auto-detect changes
+                        def backendChanged = false
+                        def frontendChanged = false
+                        
+                        // Check if this is the first build or if we can detect changes
+                        try {
+                            // Get the previous successful build commit
+                            def previousCommit = ''
+                            def builds = currentBuild.getPreviousBuildsOverThreshold(hudson.model.Result.SUCCESS, 1)
+                            if (builds.size() > 0) {
+                                def previousBuild = builds[0]
+                                // Try to get the commit from the previous build
+                                def previousBuildCommit = previousBuild.getEnvironment(this).GIT_COMMIT
+                                if (previousBuildCommit) {
+                                    previousCommit = previousBuildCommit
+                                }
+                            }
+                            
+                            if (previousCommit) {
+                                echo "Comparing changes between ${previousCommit[0..7]} and ${env.GIT_COMMIT[0..7]}"
+                                
+                                // Check for backend changes
+                                def backendChangesOutput = sh(
+                                    script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/' || true",
+                                    returnStdout: true
+                                ).trim()
+                                
+                                // Check for frontend changes  
+                                def frontendChangesOutput = sh(
+                                    script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/' || true",
+                                    returnStdout: true
+                                ).trim()
+                                
+                                backendChanged = !backendChangesOutput.isEmpty()
+                                frontendChanged = !frontendChangesOutput.isEmpty()
+                                
+                                if (backendChanged) {
+                                    echo "Backend changes detected:"
+                                    sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/'"
+                                }
+                                
+                                if (frontendChanged) {
+                                    echo "Frontend changes detected:"
+                                    sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/'"
+                                }
+                                
+                                if (!backendChanged && !frontendChanged) {
+                                    echo "No changes detected in backend or frontend directories"
+                                    // Check if there are any changes at all
+                                    def anyChanges = sh(
+                                        script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT}",
+                                        returnStdout: true
+                                    ).trim()
+                                    
+                                    if (!anyChanges.isEmpty()) {
+                                        echo "Changes detected in other files:"
+                                        sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT}"
+                                        echo "Building both components due to root-level or other changes"
+                                        backendChanged = true
+                                        frontendChanged = true
+                                    }
+                                }
+                            } else {
+                                echo "No previous successful build found - building all components"
+                                backendChanged = true
+                                frontendChanged = true
+                            }
+                        } catch (Exception e) {
+                            echo "Error detecting changes: ${e.getMessage()}"
+                            echo "Defaulting to build all components"
+                            backendChanged = true
+                            frontendChanged = true
+                        }
+                        
+                        // Set environment variables
+                        env.BACKEND_CHANGED = backendChanged.toString()
+                        env.FRONTEND_CHANGED = frontendChanged.toString()
+                        env.FORCE_BUILD_BACKEND = backendChanged.toString()
+                        env.FORCE_BUILD_FRONTEND = frontendChanged.toString()
+                    }
+                    
                     // Show mono-repo structure
                     sh '''
                         echo "Mono-repo structure:"
@@ -112,16 +218,32 @@ pipeline {
                         ls -la ${FRONTEND_PATH}/
                     '''
                     
+                    // Build decision summary
+                    def buildBackend = env.FORCE_BUILD_BACKEND == 'true'
+                    def buildFrontend = env.FORCE_BUILD_FRONTEND == 'true'
+                    
                     echo """
 Starting CLMS Mono-repo Build Pipeline
 Build Number: ${BUILD_NUMBER}
 Branch: ${env.BRANCH_NAME}
 Build Type: ${params.BUILD_TYPE}
-Backend: ${params.BUILD_BACKEND}
-Frontend: ${params.BUILD_FRONTEND}
+
+Change Detection Results:
+Backend Changed: ${env.BACKEND_CHANGED}
+Frontend Changed: ${env.FRONTEND_CHANGED}
+
+Build Decision:
+Backend Will Build: ${buildBackend}
+Frontend Will Build: ${buildFrontend}
+
+Additional Settings:
 Push to Hub: ${params.PUSH_TO_HUB}
 Deploy Locally: ${params.DEPLOY_LOCALLY}
 """
+
+                    if (!buildBackend && !buildFrontend) {
+                        echo "No components to build - pipeline will skip build stages"
+                    }
                 }
             }
         }
@@ -130,11 +252,13 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
             parallel {
                 stage('Backend Security Scan') {
                     when {
-                        expression { params.BUILD_BACKEND }
+                        expression { env.FORCE_BUILD_BACKEND == 'true' }
                     }
                     steps {
                         dir("${BACKEND_PATH}") {
                             script {
+                                echo "Running backend security scan..."
+                                
                                 // Check if .env exists
                                 sh '''
                                     if [ -f .env ]; then
@@ -160,11 +284,13 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                 
                 stage('Frontend Security Scan') {
                     when {
-                        expression { params.BUILD_FRONTEND }
+                        expression { env.FORCE_BUILD_FRONTEND == 'true' }
                     }
                     steps {
                         dir("${FRONTEND_PATH}") {
                             script {
+                                echo "Running frontend security scan..."
+                                
                                 // Check if .env.local exists
                                 sh '''
                                     if [ -f .env.local ]; then
@@ -185,6 +311,12 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                 }
                 
                 stage('Secret Scanning') {
+                    when {
+                        anyOf {
+                            expression { env.FORCE_BUILD_BACKEND == 'true' }
+                            expression { env.FORCE_BUILD_FRONTEND == 'true' }
+                        }
+                    }
                     steps {
                         script {
                             // Basic secret scanning (excluding .env files)
@@ -205,16 +337,23 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
         }
         
         stage('Build & Test') {
+            when {
+                anyOf {
+                    expression { env.FORCE_BUILD_BACKEND == 'true' }
+                    expression { env.FORCE_BUILD_FRONTEND == 'true' }
+                }
+            }
             parallel {
                 stage('Backend Build & Test') {
                     when {
-                        expression { params.BUILD_BACKEND }
+                        expression { env.FORCE_BUILD_BACKEND == 'true' }
                     }
                     stages {
                         stage('Backend Build') {
                             steps {
                                 dir("${BACKEND_PATH}") {
                                     script {
+                                        echo "Building backend Docker image..."
                                         // Build backend Docker image
                                         def buildArgs = params.FORCE_REBUILD ? '--no-cache' : ''
                                         sh """
@@ -226,6 +365,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                                 --build-arg GIT_COMMIT=${GIT_COMMIT} \
                                                 --build-arg BUILD_TYPE=${params.BUILD_TYPE} .
                                         """
+                                        echo "Backend build completed successfully"
                                     }
                                 }
                             }
@@ -240,6 +380,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                             steps {
                                 dir("${BACKEND_PATH}") {
                                     script {
+                                        echo "Running backend tests..."
                                         // Run Laravel tests
                                         sh '''
                                             docker run --rm \
@@ -255,8 +396,6 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                         // Publish test results if they exist
                                         if (fileExists('test-results.xml')) {
                                             junit testResults: 'test-results.xml', allowEmptyResults: true
-
-                                            // publishTestResults testResultsPattern: 'test-results.xml'
                                         }
                                     }
                                 }
@@ -267,6 +406,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                             steps {
                                 dir("${BACKEND_PATH}") {
                                     script {
+                                        echo "Running backend quality checks..."
                                         // Basic quality checks
                                         sh '''
                                             echo "Running backend quality checks..."
@@ -289,13 +429,14 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                 
                 stage('Frontend Build & Test') {
                     when {
-                        expression { params.BUILD_FRONTEND }
+                        expression { env.FORCE_BUILD_FRONTEND == 'true' }
                     }
                     stages {
                         stage('Frontend Build') {
                             steps {
                                 dir("${FRONTEND_PATH}") {
                                     script {
+                                        echo "Building frontend Docker image..."
                                         // Build frontend Docker image
                                         def buildArgs = params.FORCE_REBUILD ? '--no-cache' : ''
                                         sh """
@@ -308,6 +449,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                                 --build-arg NEXT_PUBLIC_APP_VERSION=${BUILD_NUMBER} \
                                                 --build-arg BUILD_TYPE=${params.BUILD_TYPE} .
                                         """
+                                        echo "Frontend build completed successfully"
                                     }
                                 }
                             }
@@ -322,6 +464,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                             steps {
                                 dir("${FRONTEND_PATH}") {
                                     script {
+                                        echo "Running frontend tests..."
                                         // Check if package.json exists
                                         sh '''
                                             if [ -f package.json ]; then
@@ -358,6 +501,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                             steps {
                                 dir("${FRONTEND_PATH}") {
                                     script {
+                                        echo "Running frontend quality checks..."
                                         // Basic quality checks
                                         sh '''
                                             echo "Running frontend quality checks..."
@@ -380,13 +524,20 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
         }
         
         stage('Security Scanning') {
+            when {
+                anyOf {
+                    expression { env.FORCE_BUILD_BACKEND == 'true' }
+                    expression { env.FORCE_BUILD_FRONTEND == 'true' }
+                }
+            }
             parallel {
                 stage('Backend Image Scan') {
                     when {
-                        expression { params.BUILD_BACKEND }
+                        expression { env.FORCE_BUILD_BACKEND == 'true' }
                     }
                     steps {
                         script {
+                            echo "Running backend security scan..."
                             // Trivy security scan for backend image
                             sh """
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
@@ -408,10 +559,11 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                 
                 stage('Frontend Image Scan') {
                     when {
-                        expression { params.BUILD_FRONTEND }
+                        expression { env.FORCE_BUILD_FRONTEND == 'true' }
                     }
                     steps {
                         script {
+                            echo "Running frontend security scan..."
                             // Trivy security scan for frontend image
                             sh """
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
@@ -435,10 +587,17 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
         
         stage('Push to Docker Hub') {
             when {
-                expression { params.PUSH_TO_HUB }
+                allOf {
+                    expression { params.PUSH_TO_HUB }
+                    anyOf {
+                        expression { env.FORCE_BUILD_BACKEND == 'true' }
+                        expression { env.FORCE_BUILD_FRONTEND == 'true' }
+                    }
+                }
             }
             steps {
                 script {
+                    echo "Pushing images to Docker Hub..."
                     // Use withCredentials instead of credentials()
                     withCredentials([usernamePassword(
                         credentialsId: 'docker-hub-credentials',
@@ -453,7 +612,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                         try {
                             parallel(
                                 "Push Backend": {
-                                    if (params.BUILD_BACKEND) {
+                                    if (env.FORCE_BUILD_BACKEND == 'true') {
                                         echo "Pushing backend images to Docker Hub..."
                                         
                                         // Tag images with username prefix
@@ -470,10 +629,12 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                             docker push ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${params.BUILD_TYPE}
                                         """
                                         echo "Backend images pushed successfully"
+                                    } else {
+                                        echo "Skipping backend push - not built in this pipeline run"
                                     }
                                 },
                                 "Push Frontend": {
-                                    if (params.BUILD_FRONTEND) {
+                                    if (env.FORCE_BUILD_FRONTEND == 'true') {
                                         echo "Pushing frontend images to Docker Hub..."
                                         
                                         // Tag images with username prefix
@@ -490,6 +651,8 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                             docker push ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${params.BUILD_TYPE}
                                         """
                                         echo "Frontend images pushed successfully"
+                                    } else {
+                                        echo "Skipping frontend push - not built in this pipeline run"
                                     }
                                 }
                             )
@@ -504,7 +667,13 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
         
         stage('Local Deployment') {
             when {
-                expression { params.DEPLOY_LOCALLY }
+                allOf {
+                    expression { params.DEPLOY_LOCALLY }
+                    anyOf {
+                        expression { env.FORCE_BUILD_BACKEND == 'true' }
+                        expression { env.FORCE_BUILD_FRONTEND == 'true' }
+                    }
+                }
             }
             steps {
                 script {
@@ -533,17 +702,18 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                     '''
                     
                     // Update docker-compose to use built images
-                    sh '''
-                        # Create a temporary docker-compose file with built images
-                        cat > docker-compose.override.yml << EOF
-services:
-  frontend:
-    image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}
-    
-  backend:
-    image: ${BACKEND_IMAGE}:${BUILD_NUMBER}
-EOF
-                    '''
+                    def composeOverride = "services:\n"
+                    if (env.FORCE_BUILD_FRONTEND == 'true') {
+                        composeOverride += "  frontend:\n    image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}\n"
+                    }
+                    if (env.FORCE_BUILD_BACKEND == 'true') {
+                        composeOverride += "  backend:\n    image: ${BACKEND_IMAGE}:${BUILD_NUMBER}\n"
+                    }
+                    
+                    writeFile file: 'docker-compose.override.yml', text: composeOverride
+                    
+                    echo "Generated docker-compose.override.yml:"
+                    sh 'cat docker-compose.override.yml'
                     
                     // Stop existing containers
                     sh '''
@@ -598,6 +768,10 @@ EOF
                     not {
                         expression { params.SKIP_TESTS }
                     }
+                    anyOf {
+                        expression { env.FORCE_BUILD_BACKEND == 'true' }
+                        expression { env.FORCE_BUILD_FRONTEND == 'true' }
+                    }
                 }
             }
             steps {
@@ -609,11 +783,9 @@ EOF
                         echo "Testing application endpoints..."
                         
                         # Test backend endpoints
-                        for port in 8000 80; do
-                            if curl -f http://localhost:$port 2>/dev/null; then
-                                echo "Backend responding on port $port"
-                                break
-                            fi
+                        if curl -f http://localhost:8000 2>/dev/null; then
+                            echo "Backend responding on port $port"
+                        fi
                         done
                         
                         # Test frontend
@@ -623,8 +795,6 @@ EOF
                         
                         # Test database connection (if backend provides health endpoint)
                         if curl -f http://localhost:8000/health 2>/dev/null; then
-                            echo "Backend health endpoint working"
-                        elif curl -f http://localhost:80/health 2>/dev/null; then
                             echo "Backend health endpoint working"
                         else
                             echo "No health endpoint found"
@@ -663,8 +833,6 @@ EOF
                 
                 // Publish test results if they exist
                 junit testResults: '**/test-results.xml', allowEmptyResults: true
-
-                // publishTestResults testResultsPattern: '**/test-results.xml', allowEmptyResults: true
                 
                 // Show final status
                 echo """
@@ -672,8 +840,10 @@ Build Summary:
 Build Number: ${BUILD_NUMBER}
 Git Commit: ${GIT_COMMIT_SHORT}
 Build Type: ${params.BUILD_TYPE}
-Backend Built: ${params.BUILD_BACKEND}
-Frontend Built: ${params.BUILD_FRONTEND}
+Backend Changed: ${env.BACKEND_CHANGED}
+Frontend Changed: ${env.FRONTEND_CHANGED}
+Backend Built: ${env.FORCE_BUILD_BACKEND}
+Frontend Built: ${env.FORCE_BUILD_FRONTEND}
 Pushed to Hub: ${params.PUSH_TO_HUB}
 Deployed Locally: ${params.DEPLOY_LOCALLY}
 """
@@ -682,33 +852,46 @@ Deployed Locally: ${params.DEPLOY_LOCALLY}
         
         success {
             script {
+                def backendBuilt = env.FORCE_BUILD_BACKEND == 'true'
+                def frontendBuilt = env.FORCE_BUILD_FRONTEND == 'true'
+                
                 echo """
 CLMS Mono-repo Build Successful!
 Build Number: ${BUILD_NUMBER}
 Branch: ${env.BRANCH_NAME}
 Build Type: ${params.BUILD_TYPE}
 Duration: ${currentBuild.durationString}
+Components Built: ${backendBuilt ? 'Backend' : ''}${backendBuilt && frontendBuilt ? ' + ' : ''}${frontendBuilt ? 'Frontend' : ''}${!backendBuilt && !frontendBuilt ? 'None (no changes detected)' : ''}
 """
                 
-                if (params.PUSH_TO_HUB) {
+                if (params.PUSH_TO_HUB && (backendBuilt || frontendBuilt)) {
                     // Access the username from the last withCredentials block
                     withCredentials([usernamePassword(
                         credentialsId: 'docker-hub-credentials',
                         usernameVariable: 'DOCKER_HUB_USERNAME',
                         passwordVariable: 'DOCKER_HUB_PASSWORD'
                     )]) {
-                        echo """
+                        def pushedImages = []
+                        if (backendBuilt) {
+                            pushedImages.add("Backend: ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${BUILD_NUMBER}")
+                        }
+                        if (frontendBuilt) {
+                            pushedImages.add("Frontend: ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${BUILD_NUMBER}")
+                        }
+                        
+                        if (pushedImages.size() > 0) {
+                            echo """
 Images successfully pushed to Docker Hub:
-Backend: ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${BUILD_NUMBER}
-Frontend: ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${BUILD_NUMBER}
+${pushedImages.join('\n')}
 """
+                        }
                     }
                 }
                 
-                if (params.DEPLOY_LOCALLY) {
+                if (params.DEPLOY_LOCALLY && (backendBuilt || frontendBuilt)) {
                     echo """
 Local deployment successful:
-Backend: Check http://localhost:8000 or http://localhost:80
+Backend: Check http://localhost:8000
 Frontend: http://localhost:3000
 Database: PostgreSQL on localhost:5432
 """
@@ -723,6 +906,8 @@ CLMS Build Failed
 Build Number: ${BUILD_NUMBER}
 Branch: ${env.BRANCH_NAME}
 Build Type: ${params.BUILD_TYPE}
+Backend Built: ${env.FORCE_BUILD_BACKEND}
+Frontend Built: ${env.FORCE_BUILD_FRONTEND}
 Check logs: ${BUILD_URL}console
 """
                 
@@ -743,6 +928,8 @@ CLMS Build Unstable
 Build Number: ${BUILD_NUMBER}
 Branch: ${env.BRANCH_NAME}
 Build Type: ${params.BUILD_TYPE}
+Backend Built: ${env.FORCE_BUILD_BACKEND}
+Frontend Built: ${env.FORCE_BUILD_FRONTEND}
 Some tests may have failed
 """
             }

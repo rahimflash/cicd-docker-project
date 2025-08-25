@@ -2,7 +2,8 @@ version: '3.8'
 
 services:
   clm-web:
-    image: rahimflash/clms-app
+    build: .
+    # image: rahimflash/clms-app
     container_name: frontend
     ports:
       - "3000:3000"

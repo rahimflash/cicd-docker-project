@@ -63,7 +63,14 @@
     "extra": {
         "laravel": {
             "dont-discover": [
-                "knuckleswtf/scribe"
+                "knuckleswtf/scribe",
+                "laravel/pail",
+                "nunomaduro/collision",
+                "fakerphp/faker",
+                "laravel/pint",
+                "laravel/sail",
+                "mockery/mockery",
+                "phpunit/phpunit"
             ]
         }
     },
