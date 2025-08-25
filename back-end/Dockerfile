@@ -132,9 +132,6 @@ ENV APP_ENV=production \
 COPY ./entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Prepare Nginx log directory with correct ownership
-# RUN mkdir -p /var/lib/nginx/logs \
-#     && chown -R clms:clms /var/lib/nginx
 
 # Copy application code with correct ownership
 COPY --chown=clms:clms . .

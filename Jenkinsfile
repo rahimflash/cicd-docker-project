@@ -108,7 +108,7 @@ pipeline {
                     
                     // Verify Docker is available
                     sh 'docker --version'
-                    sh 'docker compose --version'
+                    sh 'docker compose version'
                     
                     // Detect changes in directories
                     echo "Detecting changes in mono-repo directories..."
