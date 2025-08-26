@@ -116,6 +116,7 @@ pipeline {
                         backendChanged = true
                         frontendChanged = true
                         echo "Force build all enabled - will build both backend and frontend"
+                    env.ACTUALLY_DEPLOYED_LOCALLY = deployLocally.toString()
                     } else if (params.FORCE_BACKEND_ONLY) {
                         backendChanged = true
                         frontendChanged = false
@@ -592,13 +593,40 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
         stage('Local Deployment') {
             steps {
                 script {
-                    if (!params.DEPLOY_LOCALLY) {
-                        echo "Skipping local deployment - disabled by parameter"
+                    
+                    // Initialize deployment status
+                    env.ACTUALLY_DEPLOYED_LOCALLY = 'false'
+   
+                    if (env.BUILD_BACKEND == 'false' && env.BUILD_FRONTEND == 'false') {
+                        echo "Skipping local deployment - no components built"
                         return
                     }
                     
-                    if (env.BUILD_BACKEND == 'false' && env.BUILD_FRONTEND == 'false') {
-                        echo "Skipping local deployment - no components built"
+                    // Prompt user whether to proceed with local deployment
+                    def deployLocally = false
+                    
+                    if (params.DEPLOY_LOCALLY) {
+                        // If parameter is already true, just deploy
+                        deployLocally = true
+                        echo "Local deployment enabled by parameter - proceeding automatically"
+                    } else {
+                        // Ask user for confirmation
+                        try {
+                            timeout(time: 5, unit: 'MINUTES') {
+                                input message: 'Do you want to deploy to local Docker environment?', 
+                                      ok: 'Deploy Locally',
+                                      submitterParameter: 'SUBMITTER'
+                                deployLocally = true
+                                echo "User confirmed local deployment"
+                            }
+                        } catch (Exception e) {
+                            echo "Local deployment declined or timed out: ${e.getMessage()}"
+                            deployLocally = false
+                        }
+                    }
+                    
+                    if (!deployLocally) {
+                        echo "Skipping local deployment - user declined or disabled"
                         return
                     }
                     
@@ -760,13 +788,13 @@ EOF
         stage('Integration Tests') {
             steps {
                 script {
-                    if (!params.DEPLOY_LOCALLY) {
-                        echo "Skipping integration tests - local deployment disabled"
+                    if (env.ACTUALLY_DEPLOYED_LOCALLY != 'true') {
+                        echo "Skipping integration tests - local deployment was not performed"
                         return
                     }
                     
                     if (params.SKIP_TESTS) {
-                        echo "Skipping integration tests - disabled by parameter"
+          z              echo "Skipping integration tests - disabled by parameter"
                         return
                     }
                     
@@ -783,8 +811,6 @@ EOF
                         # Test backend endpoints
                         if curl -f http://localhost:8000 2>/dev/null; then
                             echo "Backend responding on port 8000"
-                        elif curl -f http://localhost:80 2>/dev/null; then
-                            echo "Backend responding on port 80"
                         fi
                         
                         # Test frontend
@@ -795,8 +821,6 @@ EOF
                         # Test database connection (if backend provides health endpoint)
                         if curl -f http://localhost:8000/health 2>/dev/null; then
                             echo "Backend health endpoint working"
-                        elif curl -f http://localhost:80/health 2>/dev/null; then
-                            echo "Backend health endpoint working on port 80"
                         else
                             echo "No health endpoint found"
                         fi
