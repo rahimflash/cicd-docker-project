@@ -382,9 +382,19 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                             php artisan test --junit=test-results.xml || true
                                     '''
                                     
+                                    // if (fileExists('test-results.xml')) {
+                                    //     junit testResults: 'test-results.xml', allowEmptyResults: true
+                                    // }
                                     if (fileExists('test-results.xml')) {
+                                        echo "Publishing backend test results..."
                                         junit testResults: 'test-results.xml', allowEmptyResults: true
+                                        archiveArtifacts artifacts: 'test-results.xml', fingerprint: true, allowEmptyArchive: true
+                                    } else {
+                                        echo "No backend test results file found"
                                     }
+
+                                    sh 'find . -name "*.log" -type f -exec echo "Found log: {}" \\;'
+                                    archiveArtifacts artifacts: '**/*.log', fingerprint: true, allowEmptyArchive: true
                                 }
                             }
                             
@@ -619,17 +629,17 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                 parallelPushes['Push Backend'] = {
                                     echo "Pushing backend images to Docker Hub..."
                                     
-                                    sh """
-                                        docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER} ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${BUILD_NUMBER}
-                                        docker tag ${BACKEND_IMAGE}:latest ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:latest
-                                        docker tag ${BACKEND_IMAGE}:${params.BUILD_TYPE} ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${params.BUILD_TYPE}
-                                    """
-                                    
-                                    sh """
-                                        docker push ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${BUILD_NUMBER}
-                                        docker push ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:latest
-                                        docker push ${DOCKER_HUB_USERNAME}/${BACKEND_IMAGE}:${params.BUILD_TYPE}
-                                    """
+                                    sh '''
+                                        docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER} $DOCKER_HUB_USERNAME/${BACKEND_IMAGE}:${BUILD_NUMBER}
+                                        docker tag ${BACKEND_IMAGE}:latest $DOCKER_HUB_USERNAME/${BACKEND_IMAGE}:latest
+                                        docker tag ${BACKEND_IMAGE}:${BUILD_TYPE} $DOCKER_HUB_USERNAME/${BACKEND_IMAGE}:${BUILD_TYPE}
+                                    '''
+
+                                    sh '''
+                                        docker push $DOCKER_HUB_USERNAME/${BACKEND_IMAGE}:${BUILD_NUMBER}
+                                        docker push $DOCKER_HUB_USERNAME/${BACKEND_IMAGE}:latest
+                                        docker push $DOCKER_HUB_USERNAME/${BACKEND_IMAGE}:${BUILD_TYPE}
+                                    '''
                                     echo "Backend images pushed successfully"
                                 }
                             }
@@ -638,17 +648,17 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                 parallelPushes['Push Frontend'] = {
                                     echo "Pushing frontend images to Docker Hub..."
                                     
-                                    sh """
-                                        docker tag ${FRONTEND_IMAGE}:${BUILD_NUMBER} ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${BUILD_NUMBER}
-                                        docker tag ${FRONTEND_IMAGE}:latest ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:latest
-                                        docker tag ${FRONTEND_IMAGE}:${params.BUILD_TYPE} ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${params.BUILD_TYPE}
-                                    """
-                                    
-                                    sh """
-                                        docker push ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${BUILD_NUMBER}
-                                        docker push ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:latest
-                                        docker push ${DOCKER_HUB_USERNAME}/${FRONTEND_IMAGE}:${params.BUILD_TYPE}
-                                    """
+                                    sh '''
+                                        docker tag ${FRONTEND_IMAGE}:${BUILD_NUMBER} $DOCKER_HUB_USERNAME/${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                                        docker tag ${FRONTEND_IMAGE}:latest $DOCKER_HUB_USERNAME/${FRONTEND_IMAGE}:latest
+                                        docker tag ${FRONTEND_IMAGE}:${BUILD_TYPE} $DOCKER_HUB_USERNAME/${FRONTEND_IMAGE}:${BUILD_TYPE}
+                                    '''
+
+                                    sh '''
+                                        docker push $DOCKER_HUB_USERNAME/${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                                        docker push $DOCKER_HUB_USERNAME/${FRONTEND_IMAGE}:latest
+                                        docker push $DOCKER_HUB_USERNAME/${FRONTEND_IMAGE}:${BUILD_TYPE}
+                                    '''
                                     echo "Frontend images pushed successfully"
                                 }
                             }
@@ -763,10 +773,18 @@ EOF
                         if (env.BUILD_FRONTEND == 'true') {
                             sh """
                                 cat >> docker-compose.override.yml << 'EOF'
-  frontend:
-    image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}
-    volumes: []
-EOF
+                          frontend:
+                            build: ~
+                            image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                            volumes: ~
+                            container_name: clms_frontend
+                            network_mode: "host"
+                            env_file:
+                            - ./front-end/.env.local
+                            restart: unless-stopped
+                            depends_on:
+                            - backend
+                        EOF
                             """
                         }
                         
@@ -943,11 +961,30 @@ EOF
                     docker images -f "dangling=true" -q | xargs -r docker rmi || true
                 '''
                 
-                // Archive build artifacts
-                archiveArtifacts artifacts: '**/*.log, **/*-report.json', fingerprint: true, allowEmptyArchive: true
+                // // Archive build artifacts
+                // archiveArtifacts artifacts: '**/*.log, **/*-report.json', fingerprint: true, allowEmptyArchive: true
                 
-                // Publish test results if they exist
-                junit testResults: '**/test-results.xml', allowEmptyResults: true
+                // // Publish test results if they exist
+                // junit testResults: '**/test-results.xml', allowEmptyResults: 
+
+                echo "Collecting build artifacts..."
+                sh '''
+                    echo "=== Searching for artifacts ==="
+                    find . -name "*-report.json" -o -name "*-report.txt" -o -name "test-results.xml" -o -name "*.log" | head -20
+                '''
+
+                archiveArtifacts artifacts: '**/*-report.json, **/*-report.txt, **/test-results.xml, **/*.log', 
+                                fingerprint: true, 
+                                allowEmptyArchive: true
+
+                script {
+                    try {
+                        junit testResults: '**/test-results.xml', allowEmptyResults: true
+                        echo "Test results published successfully"
+                    } catch (Exception e) {
+                        echo "No test results to publish: ${e.getMessage()}"
+                    }
+                }
                 
                 // Show final status
                 echo """
