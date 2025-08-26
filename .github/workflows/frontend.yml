@@ -1,154 +1,154 @@
-name: CI/CD Pipeline
+# name: CI/CD Pipeline
 
-on:
-  push:
-    branches: [ main, develop ]
-    paths:
-      - "front-end/**"
-      - ".github/workflows/frontend.yml"
-  pull_request:
-    branches: [ main ]
-    paths:
-      - "front-end/**"
+# on:
+#   push:
+#     branches: [ main, develop ]
+#     paths:
+#       - "front-end/**"
+#       - ".github/workflows/frontend.yml"
+#   pull_request:
+#     branches: [ main ]
+#     paths:
+#       - "front-end/**"
 
-  schedule:
-    - cron: '0 0 * * 0' # Weekly security scan
+#   schedule:
+#     - cron: '0 0 * * 0' # Weekly security scan
   
-permissions:
-  contents: read
-  security-events: write
+# permissions:
+#   contents: read
+#   security-events: write
 
-env:
-  REGISTRY: docker.io
-  IMAGE_NAME: "${{ secrets.DOCKER_USERNAME }}/clms-app"
+# env:
+#   REGISTRY: docker.io
+#   IMAGE_NAME: "${{ secrets.DOCKER_USERNAME }}/clms-app"
 
-jobs:
-  # Job 1: Test & Lint
-  test:
-    name: Test & Lint
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: front-end
+# jobs:
+#   # Job 1: Test & Lint
+#   test:
+#     name: Test & Lint
+#     runs-on: ubuntu-latest
+#     defaults:
+#       run:
+#         working-directory: front-end
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
       
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: front-end/package-lock.json
+#       - name: Setup Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: '18'
+#           cache: 'npm'
+#           cache-dependency-path: front-end/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+#       - name: Install dependencies
+#         run: npm ci
       
-      - name: Run linter
-        run: npm run lint
+#       - name: Run linter
+#         run: npm run lint
       
-      - name: Build application
-        run: npm run build
-        env:
-          SECRET_COOKIE_PASSWORD: ${{ secrets.SECRET_COOKIE_PASSWORD }}
-          TINY_MCE_API_KEY: ${{ secrets.TINY_MCE_API_KEY }}
-          BACKEND_API_HOST: ${{ secrets.BACKEND_API_HOST }}
-          NODE_ENV: production
+#       - name: Build application
+#         run: npm run build
+#         env:
+#           SECRET_COOKIE_PASSWORD: ${{ secrets.SECRET_COOKIE_PASSWORD }}
+#           TINY_MCE_API_KEY: ${{ secrets.TINY_MCE_API_KEY }}
+#           BACKEND_API_HOST: ${{ secrets.BACKEND_API_HOST }}
+#           NODE_ENV: production
 
 
-  # Job 2: Security Scan
-  security-scan:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: front-end
+#   # Job 2: Security Scan
+#   security-scan:
+#     name: Security Scan
+#     runs-on: ubuntu-latest
+#     defaults:
+#       run:
+#         working-directory: front-end
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
       
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+#       - name: Run Trivy vulnerability scanner
+#         uses: aquasecurity/trivy-action@master
+#         with:
+#           scan-type: 'fs'
+#           scan-ref: '.'
+#           format: 'sarif'
+#           output: 'trivy-results.sarif'
       
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
+#       - name: Upload Trivy scan results to GitHub Security tab
+#         uses: github/codeql-action/upload-sarif@v3
+#         if: always()
+#         with:
+#           sarif_file: 'trivy-results.sarif'
 
-  # Job 3: Build & Push Docker Image
-  build-and-push:
-    name: Build & Push Docker Image
-    needs: [test, security-scan]
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: front-end
-    if: github.ref == 'refs/heads/main'
+#   # Job 3: Build & Push Docker Image
+#   build-and-push:
+#     name: Build & Push Docker Image
+#     needs: [test, security-scan]
+#     runs-on: ubuntu-latest
+#     defaults:
+#       run:
+#         working-directory: front-end
+#     if: github.ref == 'refs/heads/main'
     
-    # permissions:
-    #   contents: read
+#     # permissions:
+#     #   contents: read
     
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
       
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v3
       
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+#       - name: Log in to Docker Hub
+#         uses: docker/login-action@v3
+#         with:
+#           username: ${{ secrets.DOCKER_USERNAME }}
+#           password: ${{ secrets.DOCKER_PASSWORD }}
       
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
+#       - name: Extract metadata
+#         id: meta
+#         uses: docker/metadata-action@v5
+#         with:
+#           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+#           tags: |
+#             type=ref,event=branch
+#             type=ref,event=pr
+#             type=sha,prefix={{branch}}-
+#             type=raw,value=latest,enable={{is_default_branch}}
       
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./front-end 
-          file: ./front-end/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+#       - name: Build and push Docker image
+#         uses: docker/build-push-action@v5
+#         with:
+#           context: ./front-end 
+#           file: ./front-end/Dockerfile
+#           push: true
+#           tags: ${{ steps.meta.outputs.tags }}
+#           labels: ${{ steps.meta.outputs.labels }}
+#           cache-from: type=gha
+#           cache-to: type=gha,mode=max
+#           platforms: linux/amd64,linux/arm64
 
-  # Job 4: Deploy
-  # deploy:
-  #   name: Deploy to Production
-  #   needs: build-and-push
-  #   runs-on: ubuntu-latest
-  #   if: github.ref == 'refs/heads/main'
-  #   environment: production
-  #   defaults:
-  #     run:
-  #       working-directory: front-end
+#   # Job 4: Deploy
+#   # deploy:
+#   #   name: Deploy to Production
+#   #   needs: build-and-push
+#   #   runs-on: ubuntu-latest
+#   #   if: github.ref == 'refs/heads/main'
+#   #   environment: production
+#   #   defaults:
+#   #     run:
+#   #       working-directory: front-end
     
-  #   steps:
-  #     - name: Deploy to server
-  #       run: |
-  #         echo "Add your deployment commands here"
-  #         echo "For example:"
-  #         echo "- SSH into your server"
-  #         echo "- Pull the new Docker image"
-  #         echo "- Restart the container"
-  #         echo "- Run health checks"
+#   #   steps:
+#   #     - name: Deploy to server
+#   #       run: |
+#   #         echo "Add your deployment commands here"
+#   #         echo "For example:"
+#   #         echo "- SSH into your server"
+#   #         echo "- Pull the new Docker image"
+#   #         echo "- Restart the container"
+#   #         echo "- Run health checks"

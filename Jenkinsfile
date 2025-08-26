@@ -618,9 +618,9 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                         usernameVariable: 'DOCKER_HUB_USERNAME',
                         passwordVariable: 'DOCKER_HUB_PASSWORD'
                     )]) {
-                        sh """
-                            echo '${DOCKER_HUB_PASSWORD}' | docker login -u '${DOCKER_HUB_USERNAME}' --password-stdin
-                        """
+                        sh '''
+                            echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
+                        '''
                         
                         try {
                             def parallelPushes = [:]
@@ -689,7 +689,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                     
                     if (params.DEPLOY_LOCALLY) {
                         // If parameter is already true, just deploy
-                        deployLocally = true
+                        deployLocally = false
                         echo "Local deployment enabled by parameter - proceeding automatically"
                     } else {
                         // Ask user for confirmation
@@ -773,18 +773,17 @@ EOF
                         if (env.BUILD_FRONTEND == 'true') {
                             sh """
                                 cat >> docker-compose.override.yml << 'EOF'
-                          frontend:
-                            build: ~
-                            image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}
-                            volumes: ~
-                            container_name: clms_frontend
-                            network_mode: "host"
-                            env_file:
-                            - ./front-end/.env.local
-                            restart: unless-stopped
-                            depends_on:
-                            - backend
-                        EOF
+  frontend:
+    image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}
+    volumes: ~
+    container_name: clms_frontend
+    network_mode: "host"
+    env_file:
+    - ./front-end/.env.local
+    restart: unless-stopped
+    depends_on:
+    - backend
+EOF
                             """
                         }
                         
