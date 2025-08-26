@@ -81,7 +81,7 @@ pipeline {
         )
         booleanParam(
             name: 'DEPLOY_LOCALLY',
-            defaultValue: true,
+            defaultValue: false,
             description: 'Deploy to local Docker environment'
         )
     }
@@ -493,7 +493,28 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                     if (env.BUILD_BACKEND == 'true') {
                         parallelStages['Backend Image Scan'] = {
                             echo "Running backend security scan..."
+                            // sh """
+                            //     docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                            //         aquasec/trivy:latest image \
+                            //         --exit-code 0 \
+                            //         --severity HIGH,CRITICAL \
+                            //         --format json \
+                            //         --output backend-security-report.json \
+                            //         ${BACKEND_IMAGE}:${BUILD_NUMBER} || true
+                            // """
+                            
+                            // if (fileExists('backend-security-report.json')) {
+                            //     archiveArtifacts artifacts: 'backend-security-report.json', fingerprint: true
+                            // }
                             sh """
+                                docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                    aquasec/trivy:latest image \
+                                    --exit-code 0 \
+                                    --severity HIGH,CRITICAL \
+                                    --format table \
+                                    --output backend-security-report.txt \
+                                    ${BACKEND_IMAGE}:${BUILD_NUMBER} || true
+                                    
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
                                     aquasec/trivy:latest image \
                                     --exit-code 0 \
@@ -502,9 +523,16 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                     --output backend-security-report.json \
                                     ${BACKEND_IMAGE}:${BUILD_NUMBER} || true
                             """
-                            
-                            if (fileExists('backend-security-report.json')) {
-                                archiveArtifacts artifacts: 'backend-security-report.json', fingerprint: true
+
+                            script {
+                                if (fileExists('backend-security-report.json')) {
+                                    archiveArtifacts artifacts: 'backend-security-report.json', fingerprint: true
+                                    echo "Backend security report archived"
+                                }
+                                if (fileExists('backend-security-report.txt')) {
+                                    archiveArtifacts artifacts: 'backend-security-report.txt', fingerprint: true
+                                    echo "Backend security report (readable) archived"
+                                }
                             }
                         }
                     }
@@ -512,7 +540,28 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                     if (env.BUILD_FRONTEND == 'true') {
                         parallelStages['Frontend Image Scan'] = {
                             echo "Running frontend security scan..."
+                            // sh """
+                            //     docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                            //         aquasec/trivy:latest image \
+                            //         --exit-code 0 \
+                            //         --severity HIGH,CRITICAL \
+                            //         --format json \
+                            //         --output frontend-security-report.json \
+                            //         ${FRONTEND_IMAGE}:${BUILD_NUMBER} || true
+                            // """
+                            
+                            // if (fileExists('frontend-security-report.json')) {
+                            //     archiveArtifacts artifacts: 'frontend-security-report.json', fingerprint: true
+                            // }
                             sh """
+                                docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                    aquasec/trivy:latest image \
+                                    --exit-code 0 \
+                                    --severity HIGH,CRITICAL \
+                                    --format table \
+                                    --output frontend-security-report.txt \
+                                    ${FRONTEND_IMAGE}:${BUILD_NUMBER} || true
+                                    
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
                                     aquasec/trivy:latest image \
                                     --exit-code 0 \
@@ -521,9 +570,16 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                     --output frontend-security-report.json \
                                     ${FRONTEND_IMAGE}:${BUILD_NUMBER} || true
                             """
-                            
-                            if (fileExists('frontend-security-report.json')) {
-                                archiveArtifacts artifacts: 'frontend-security-report.json', fingerprint: true
+
+                            script {
+                                if (fileExists('frontend-security-report.json')) {
+                                    archiveArtifacts artifacts: 'frontend-security-report.json', fingerprint: true
+                                    echo "Frontend security report archived"
+                                }
+                                if (fileExists('frontend-security-report.txt')) {
+                                    archiveArtifacts artifacts: 'frontend-security-report.txt', fingerprint: true
+                                    echo "frontend security report (readable) archived"
+                                }
                             }
                         }
                     }
