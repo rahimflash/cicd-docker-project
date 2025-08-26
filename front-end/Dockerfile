@@ -21,8 +21,8 @@ ARG SECRET_COOKIE_PASSWORD=asde213nfdswefhd46rhfnshfk3jfjkldj3j2jkf
 ENV SECRET_COOKIE_PASSWORD=$SECRET_COOKIE_PASSWORD
 
 RUN npm run build
-RUN ls -R /app/.next/standalone || true
-RUN ls -R /app/.next || true
+# RUN ls -R /app/.next/standalone || true
+# RUN ls -R /app/.next || true
 
 # Stage 3: Production runner
 FROM node:18-alpine AS runner

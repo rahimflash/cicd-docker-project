@@ -67,7 +67,7 @@ COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 
 # Copy composer files first for better caching
-COPY composer.json composer.lock ./
+COPY composer.json ./
 
 # Use BuildKit cache mount for composer cache
 RUN --mount=type=cache,target=/root/.composer/cache \

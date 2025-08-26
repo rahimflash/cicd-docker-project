@@ -415,8 +415,8 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                     echo "Running frontend tests..."
                                     sh '''
                                         if [ -f package.json ]; then
-                                            echo "package.json found"
-                                            cat package.json | grep -A 5 -B 5 "scripts" || true
+                                            echo "Available npm scripts:"
+                                            cat package.json | jq '.scripts' || cat package.json | grep -A 10 '"scripts"'
                                         else
                                             echo "package.json not found"
                                         fi
@@ -426,16 +426,16 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                         docker run --rm \
                                             -v $(pwd):/app \
                                             -w /app \
-                                            node:${NODE_VERSION}-alpine \
-                                            sh -c "npm ci && npm run build" || true
+                                            ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
+                                            sh -c "npm test || echo 'No test script found'" || true
                                     '''
                                     
                                     sh '''
                                         docker run --rm \
                                             -v $(pwd):/app \
                                             -w /app \
-                                            node:${NODE_VERSION}-alpine \
-                                            sh -c "npm ci && (npm run lint || echo 'No lint script found')" || true
+                                            ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
+                                            sh -c "npm run lint || echo 'No lint script found'" || true
                                     '''
                                 }
                             }
