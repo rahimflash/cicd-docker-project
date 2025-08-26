@@ -1,6 +1,7 @@
 services:
   frontend:
-    build: ./front-end
+    # build: ./front-end
+    image: rahimflash/clms_frontend
     container_name: clms_frontend
     # ports:
     #   - "3000:3000"
@@ -21,7 +22,8 @@ services:
       - backend
   
   backend:
-    build: ./back-end
+    # build: ./back-end
+    image: rahimflash/clms_backend
     container_name: clms_backend
     # ports:
     #   - "8000:8000"

@@ -81,7 +81,7 @@ pipeline {
         )
         booleanParam(
             name: 'DEPLOY_LOCALLY',
-            defaultValue: false,
+            defaultValue: true,
             description: 'Deploy to local Docker environment'
         )
     }
@@ -709,6 +709,7 @@ EOF
                                 cat >> docker-compose.override.yml << 'EOF'
   frontend:
     image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}
+    volumes: []
 EOF
                             """
                         }
