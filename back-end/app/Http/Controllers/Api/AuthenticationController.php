@@ -80,19 +80,20 @@ class AuthenticationController extends Controller
      * @return JsonResponse
      * @throws \Illuminate\Validation\ValidationException
      */
-    public function changePassword(Request $request, User $user)
+    public function changePassword(Request $request): JsonResponse
     {
         $request->validate([
             'password' => ["required", "string", "confirmed"]
         ]);
 
-        $password = $request->post('password');
-        $user->password = bcrypt($password);
+        $user = $request->user();
+        $user->password = bcrypt($request->post('password'));
         $user->save();
 
         //todo -- notify user of password reset
-
-        return response()->json(null, Response::HTTP_OK);
+        return response()->json([
+            'message' => 'Password updated successfully',
+        ], \Illuminate\Http\Response::HTTP_OK);
     }
 
 }
