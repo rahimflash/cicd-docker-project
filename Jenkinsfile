@@ -624,15 +624,37 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                 cp ${FRONTEND_PATH}/.env.example ${FRONTEND_PATH}/.env.local
                             fi
                         fi
+                        
+                        # Check if main .env file exists for database variables
+                        if [ ! -f .env ]; then
+                            echo "Creating main .env file for database"
+                            cat > .env << EOF
+POSTGRES_USER=postgresuser
+POSTGRES_PASSWORD=postgrespass
+POSTGRES_DB=clms
+REDIS_PASSWORD=redis123
+EOF
+                        fi
                     '''
                     
-                    // Update docker-compose to use built images
+                    // Create docker-compose override to use built images instead of building
                     def composeOverride = "services:\n"
+                    
                     if (env.BUILD_FRONTEND == 'true') {
-                        composeOverride += "  frontend:\n    image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}\n"
+                        composeOverride += """  frontend:
+    build: null
+    image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}
+    volumes: []
+"""
                     }
+                    
                     if (env.BUILD_BACKEND == 'true') {
-                        composeOverride += "  backend:\n    image: ${BACKEND_IMAGE}:${BUILD_NUMBER}\n"
+                        composeOverride += """  backend:
+    build: null
+    image: ${BACKEND_IMAGE}:${BUILD_NUMBER}
+    volumes:
+      - ${BACKEND_PATH}/.env:/home/app/.env
+"""
                     }
                     
                     writeFile file: 'docker-compose.override.yml', text: composeOverride
@@ -642,44 +664,93 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                     
                     // Stop existing containers
                     sh '''
-                        docker compose down || true
+                        echo "Stopping existing containers..."
+                        docker compose down --remove-orphans || true
                     '''
                     
-                    // Start new containers
+                    // Start services
                     sh '''
-                        docker-compose up -d
-                    '''
-                    
-                    // Wait for services to start
-                    sleep(60)
-                    
-                    // Verify deployment
-                    sh '''
-                        echo "Checking local deployment health..."
+                        echo "Starting services..."
+                        docker compose up -d
                         
-                        # Check if containers are running
+                        echo "Waiting for services to start..."
+                        sleep 30
+                        
+                        echo "Container status:"
                         docker compose ps
+                    '''
+                    
+                    // Wait for health checks
+                    sh '''
+                        echo "Waiting for health checks..."
                         
-                        # Check PostgreSQL
-                        if docker-compose exec -T database pg_isready; then
-                            echo "PostgreSQL is healthy"
+                        # Wait up to 2 minutes for services to be healthy
+                        for i in $(seq 1 24); do
+                            echo "Health check attempt $i/24"
+                            
+                            # Check database health
+                            if docker compose exec -T database pg_isready -U postgresuser -d clms; then
+                                echo "Database is healthy"
+                                DB_HEALTHY=true
+                            else
+                                echo "Database not ready yet"
+                                DB_HEALTHY=false
+                            fi
+                            
+                            # Check if containers are running
+                            RUNNING=$(docker compose ps --format "table {{.Service}}\\t{{.Status}}" | grep -c "running" || true)
+                            TOTAL=$(docker compose ps --format "table {{.Service}}" | tail -n +2 | wc -l || true)
+                            
+                            echo "Services running: $RUNNING/$TOTAL"
+                            
+                            if [ "$RUNNING" = "$TOTAL" ] && [ "$DB_HEALTHY" = "true" ]; then
+                                echo "All services appear to be healthy"
+                                break
+                            fi
+                            
+                            if [ "$i" = "24" ]; then
+                                echo "Timeout waiting for services to be healthy"
+                                docker compose logs --tail=20
+                            fi
+                            
+                            sleep 5
+                        done
+                    '''
+                    
+                    // Verify deployment endpoints
+                    sh '''
+                        echo "Testing service endpoints..."
+                        
+                        # Test backend (host network, so should be on localhost:8000)
+                        if curl -f http://localhost:8000 >/dev/null 2>&1; then
+                            echo "Backend responding on localhost:8000"
                         else
-                            echo "PostgreSQL health check failed"
+                            echo "Backend not responding on localhost:8000"
+                            echo "Checking backend logs:"
+                            docker compose logs backend --tail=10
                         fi
                         
-                        # Check backend health (assuming it runs on port 8000)
-                        sleep 10
-                        if curl -f http://localhost:8000 2>/dev/null || curl -f http://localhost:80 2>/dev/null; then
-                            echo "Backend is responding"
+                        # Test frontend (host network, so should be on localhost:3000)  
+                        if curl -f http://localhost:3000 >/dev/null 2>&1; then
+                            echo "Frontend responding on localhost:3000"
                         else
-                            echo "Backend not responding on expected ports"
+                            echo "Frontend not responding on localhost:3000"
+                            echo "Checking frontend logs:"
+                            docker compose logs frontend --tail=10
                         fi
                         
-                        # Check frontend health (assuming it runs on port 3000)
-                        if curl -f http://localhost:3000 2>/dev/null; then
-                            echo "Frontend is responding"
+                        # Test database connection
+                        if docker compose exec -T database psql -U postgresuser -d clms -c "SELECT 1;" >/dev/null 2>&1; then
+                            echo "Database connection successful"
                         else
-                            echo "Frontend not responding on port 3000"
+                            echo "Database connection failed"
+                        fi
+                        
+                        # Test Redis
+                        if docker compose exec -T redis redis-cli -a redis123 ping >/dev/null 2>&1; then
+                            echo "Redis connection successful"
+                        else
+                            echo "Redis connection failed"
                         fi
                     '''
                 }
