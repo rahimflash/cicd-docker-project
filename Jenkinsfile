@@ -130,16 +130,32 @@ pipeline {
                         
                         // Check if this is the first build or if we can detect changes
                         try {
-                            // Get the previous successful build commit
+                            // Get the previous successful build commit - using correct Jenkins API
                             def previousCommit = ''
-                            def builds = currentBuild.getPreviousBuildsOverThreshold(hudson.model.Result.SUCCESS, 1)
-                            if (builds.size() > 0) {
-                                def previousBuild = builds[0]
-                                // Try to get the commit from the previous build
-                                def previousBuildCommit = previousBuild.getEnvironment(this).GIT_COMMIT
-                                if (previousBuildCommit) {
-                                    previousCommit = previousBuildCommit
+                            def previousBuild = currentBuild.getPreviousBuild()
+                            
+                            // Look for the last successful build
+                            while (previousBuild != null) {
+                                if (previousBuild.getResult() == null || previousBuild.getResult().toString() == 'SUCCESS') {
+                                    try {
+                                        def previousEnv = previousBuild.getBuildVariables()
+                                        if (previousEnv.containsKey('GIT_COMMIT')) {
+                                            previousCommit = previousEnv['GIT_COMMIT']
+                                            break
+                                        }
+                                    } catch (Exception envEx) {
+                                        // Try alternative method
+                                        def previousActions = previousBuild.getAllActions()
+                                        for (action in previousActions) {
+                                            if (action.hasProperty('lastBuiltRevision') && action.lastBuiltRevision != null) {
+                                                previousCommit = action.lastBuiltRevision.getSha1String()
+                                                break
+                                            }
+                                        }
+                                        if (previousCommit) break
+                                    }
                                 }
+                                previousBuild = previousBuild.getPreviousBuild()
                             }
                             
                             if (previousCommit) {
@@ -664,41 +680,46 @@ REDIS_PASSWORD=redis123
 EOF
                         fi
                     '''
-                    
-                    // Create docker-compose override to use built images instead of building
-                    def composeOverride = "services:\n"
-                    
-                    if (env.BUILD_FRONTEND == 'true') {
-                        composeOverride += """  frontend:
-    build: null
-    image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}
-    volumes: []
-"""
-                    }
-                    
-                    if (env.BUILD_BACKEND == 'true') {
-                        composeOverride += """  backend:
-    build: null
-    image: ${BACKEND_IMAGE}:${BUILD_NUMBER}
-    volumes:
-      - ${BACKEND_PATH}/.env:/home/app/.env
-"""
-                    }
-                    
-                    writeFile file: 'docker-compose.override.yml', text: composeOverride
-                    
-                    echo "Generated docker-compose.override.yml:"
-                    sh 'cat docker-compose.override.yml'
-                    
-                    // Stop existing containers
+                    // Stop existing containers first
                     sh '''
                         echo "Stopping existing containers..."
                         docker compose down --remove-orphans || true
                     '''
                     
-                    // Start services
+                    // Tag the built images to match what docker-compose expects, or modify the compose approach
+                    if (env.BUILD_BACKEND == 'true' || env.BUILD_FRONTEND == 'true') {
+                        sh '''
+                            # Create a simple override that uses our built images instead of building
+                            cat > docker-compose.override.yml << 'EOF'
+services:
+EOF
+                        '''
+                        
+                        if (env.BUILD_BACKEND == 'true') {
+                            sh """
+                                cat >> docker-compose.override.yml << 'EOF'
+  backend:
+    image: ${BACKEND_IMAGE}:${BUILD_NUMBER}
+EOF
+                            """
+                        }
+                        
+                        if (env.BUILD_FRONTEND == 'true') {
+                            sh """
+                                cat >> docker-compose.override.yml << 'EOF'
+  frontend:
+    image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}
+EOF
+                            """
+                        }
+                        
+                        echo "Generated docker-compose.override.yml:"
+                        sh 'cat docker-compose.override.yml'
+                    }
+                    
+                    // Start services using your existing compose file + override
                     sh '''
-                        echo "Starting services..."
+                        echo "Starting services with docker-compose..."
                         docker compose up -d
                         
                         echo "Waiting for services to start..."
@@ -725,19 +746,31 @@ EOF
                                 DB_HEALTHY=false
                             fi
                             
+                            # Check Redis
+                            if docker compose exec -T redis redis-cli -a redis123 ping | grep PONG > /dev/null; then
+                                echo "Redis is healthy"
+                                REDIS_HEALTHY=true
+                            else
+                                echo "Redis not ready yet"
+                                REDIS_HEALTHY=false
+                            fi
+                            
                             # Check if containers are running
                             RUNNING=$(docker compose ps --format "table {{.Service}}\\t{{.Status}}" | grep -c "running" || true)
                             TOTAL=$(docker compose ps --format "table {{.Service}}" | tail -n +2 | wc -l || true)
                             
                             echo "Services running: $RUNNING/$TOTAL"
                             
-                            if [ "$RUNNING" = "$TOTAL" ] && [ "$DB_HEALTHY" = "true" ]; then
-                                echo "All services appear to be healthy"
+                            if [ "$RUNNING" = "$TOTAL" ] && [ "$DB_HEALTHY" = "true" ] && [ "$REDIS_HEALTHY" = "true" ]; then
+                                echo "All infrastructure services are healthy"
                                 break
                             fi
                             
                             if [ "$i" = "24" ]; then
                                 echo "Timeout waiting for services to be healthy"
+                                echo "=== Container Status ==="
+                                docker compose ps
+                                echo "=== Recent Logs ==="
                                 docker compose logs --tail=20
                             fi
                             
