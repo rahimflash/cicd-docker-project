@@ -369,7 +369,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                 
                                 // Composer audit for security vulnerabilities
                                 sh '''
-                                    docker run --rm -v $(pwd):/app composer:2.7 audit || true
+                                    docker run --rm -v $(pwd): composer:2.7 audit || true
                                 '''
                                 
                                 // PHP syntax check
@@ -396,7 +396,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                 
                                 // NPM audit
                                 sh '''
-                                    docker run --rm -v $(pwd):/app -w /app node:${NODE_VERSION}-alpine \
+                                    docker run --rm -v $(pwd): -w /app node:${NODE_VERSION}-alpine \
                                         sh -c "npm audit --audit-level=high || true"
                                 '''
                             }
@@ -540,7 +540,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                     
                                     sh '''
                                         docker run --rm \
-                                            -v $(pwd):/app \
+                                            -v $(pwd): \
                                             -w /app \
                                             ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
                                             sh -c "npm test || echo 'No test script found'" || true
@@ -548,7 +548,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                     
                                     sh '''
                                         docker run --rm \
-                                            -v $(pwd):/app \
+                                            -v $(pwd): \
                                             -w /app \
                                             ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
                                             sh -c "npm run lint || echo 'No lint script found'" || true
