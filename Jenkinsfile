@@ -516,8 +516,27 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                             // if (fileExists('backend-security-report.json')) {
                             //     archiveArtifacts artifacts: 'backend-security-report.json', fingerprint: true
                             // }
+                            // sh """
+                            //     docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                            //         aquasec/trivy:latest image \
+                            //         --exit-code 0 \
+                            //         --severity HIGH,CRITICAL \
+                            //         --format table \
+                            //         --output backend-security-report.txt \
+                            //         ${BACKEND_IMAGE}:${BUILD_NUMBER} || true
+                                    
+                            //     docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                            //         aquasec/trivy:latest image \
+                            //         --exit-code 0 \
+                            //         --severity HIGH,CRITICAL \
+                            //         --format json \
+                            //         --output backend-security-report.json \
+                            //         ${BACKEND_IMAGE}:${BUILD_NUMBER} || true
+                            // """
                             sh """
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                    -v \$(pwd):/workspace \
+                                    -w /workspace \
                                     aquasec/trivy:latest image \
                                     --exit-code 0 \
                                     --severity HIGH,CRITICAL \
@@ -526,6 +545,8 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                     ${BACKEND_IMAGE}:${BUILD_NUMBER} || true
                                     
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                    -v \$(pwd):/workspace \
+                                    -w /workspace \
                                     aquasec/trivy:latest image \
                                     --exit-code 0 \
                                     --severity HIGH,CRITICAL \
@@ -533,7 +554,6 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                     --output backend-security-report.json \
                                     ${BACKEND_IMAGE}:${BUILD_NUMBER} || true
                             """
-
                             script {
                                 if (fileExists('backend-security-report.json')) {
                                     archiveArtifacts artifacts: 'backend-security-report.json', fingerprint: true
@@ -563,8 +583,27 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                             // if (fileExists('frontend-security-report.json')) {
                             //     archiveArtifacts artifacts: 'frontend-security-report.json', fingerprint: true
                             // }
+                            // sh """
+                            //     docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                            //         aquasec/trivy:latest image \
+                            //         --exit-code 0 \
+                            //         --severity HIGH,CRITICAL \
+                            //         --format table \
+                            //         --output frontend-security-report.txt \
+                            //         ${FRONTEND_IMAGE}:${BUILD_NUMBER} || true
+                                    
+                            //     docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                            //         aquasec/trivy:latest image \
+                            //         --exit-code 0 \
+                            //         --severity HIGH,CRITICAL \
+                            //         --format json \
+                            //         --output frontend-security-report.json \
+                            //         ${FRONTEND_IMAGE}:${BUILD_NUMBER} || true
+                            // """
                             sh """
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                    -v \$(pwd):/workspace \
+                                    -w /workspace \
                                     aquasec/trivy:latest image \
                                     --exit-code 0 \
                                     --severity HIGH,CRITICAL \
@@ -573,6 +612,8 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                     ${FRONTEND_IMAGE}:${BUILD_NUMBER} || true
                                     
                                 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                    -v \$(pwd):/workspace \
+                                    -w /workspace \
                                     aquasec/trivy:latest image \
                                     --exit-code 0 \
                                     --severity HIGH,CRITICAL \
@@ -967,15 +1008,26 @@ EOF
                 // junit testResults: '**/test-results.xml', allowEmptyResults: 
 
                 echo "Collecting build artifacts..."
+                // sh '''
+                //     echo "=== Searching for artifacts ==="
+                //     find . -name "*-report.json" -o -name "*-report.txt" -o -name "test-results.xml" -o -name "*.log" | head -20
+                // '''
                 sh '''
+                    echo "=== Current directory and files ==="
+                    pwd
+                    echo "=== All files in workspace ==="
+                    ls -la
                     echo "=== Searching for artifacts ==="
-                    find . -name "*-report.json" -o -name "*-report.txt" -o -name "test-results.xml" -o -name "*.log" | head -20
+                    find . -name "*-report.*" -o -name "test-results.xml" 2>/dev/null || echo "No artifacts found"
+                    echo "=== Checking subdirectories ==="
+                    find . -type f -name "*.xml" -o -name "*report*" 2>/dev/null || echo "No reports found"
                 '''
-
-                archiveArtifacts artifacts: '**/*-report.json, **/*-report.txt, **/test-results.xml, **/*.log', 
+                // archiveArtifacts artifacts: '**/*-report.json, **/*-report.txt, **/test-results.xml, **/*.log', 
+                //                 fingerprint: true, 
+                //                 allowEmptyArchive: true
+                archiveArtifacts artifacts: '*-report.json, *-report.txt, */test-results.xml', 
                                 fingerprint: true, 
                                 allowEmptyArchive: true
-
                 script {
                     try {
                         junit testResults: '**/test-results.xml', allowEmptyResults: true
