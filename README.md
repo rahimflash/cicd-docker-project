@@ -368,10 +368,6 @@ The application includes basic monitoring:
 - Performance metrics collection
 - Database query monitoring
 
-## License
-
-This project is licensed under the MIT License. See the LICENSE file for details.
-
 ## Changelog
 
 ### Recent Updates
