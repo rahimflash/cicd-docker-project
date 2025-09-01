@@ -530,7 +530,6 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                 dir("${FRONTEND_PATH}") {
                                     echo "Running frontend tests..."
                                     sh '''
-                                        apt-get install -y jq || true
                                         if [ -f package.json ]; then
                                             echo "Available npm scripts:"
                                             cat package.json | jq '.scripts' || cat package.json | grep -A 10 '"scripts"'
