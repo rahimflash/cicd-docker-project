@@ -176,15 +176,52 @@ pipeline {
                                 backendChanged = !backendChangesOutput.isEmpty()
                                 frontendChanged = !frontendChangesOutput.isEmpty()
                                 
+                                // if (backendChanged) {
+                                //     echo "Backend changes detected:"
+                                //     sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/'"
+                                // }
+                                
+                                // if (frontendChanged) {
+                                //     echo "Frontend changes detected:"
+                                //     sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/'"
+                                // }
+
+                                // Debug: Show all changed files
+                                echo "=== DEBUG: All changed files ==="
+                                sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT}"
+
+                                // Check backend changes with debug
+                                def backendChangesOutput = sh(
+                                    script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/' || true",
+                                    returnStdout: true
+                                ).trim()
+
                                 if (backendChanged) {
                                     echo "Backend changes detected:"
+                                    echo "Raw output: '${backendChangesOutput}'"
                                     sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/'"
+                                } else {
+                                    echo "No backend changes (output was: '${backendChangesOutput}')"
                                 }
-                                
+
+                                // Check frontend changes with debug  
+                                def frontendChangesOutput = sh(
+                                    script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/' || true",
+                                    returnStdout: true
+                                ).trim()
+
                                 if (frontendChanged) {
                                     echo "Frontend changes detected:"
+                                    echo "Raw output: '${frontendChangesOutput}'"
                                     sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/'"
+                                } else {
+                                    echo "No frontend changes (output was: '${frontendChangesOutput}')"
                                 }
+
+                                // Debug: Show what commits we're comparing
+                                echo "=== DEBUG: Commit comparison ==="
+                                echo "Previous commit: ${previousCommit}"
+                                echo "Current commit: ${env.GIT_COMMIT}"
                                 
                                 if (!backendChanged && !frontendChanged) {
                                     echo "No changes detected in backend or frontend directories"
