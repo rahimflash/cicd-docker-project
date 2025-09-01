@@ -129,120 +129,172 @@ pipeline {
                         echo "Auto-detecting changes..."
                         
                         // Check if this is the first build or if we can detect changes
-                        try {
-                            // Get the previous successful build commit - using correct Jenkins API
-                            def previousCommit = ''
-                            def previousBuild = currentBuild.getPreviousBuild()
+                    //     try {
+                    //         // Get the previous successful build commit - using correct Jenkins API
+                    //         def previousCommit = ''
+                    //         def previousBuild = currentBuild.getPreviousBuild()
                             
-                            // Look for the last successful build
-                            while (previousBuild != null) {
-                                if (previousBuild.getResult() == null || previousBuild.getResult().toString() == 'SUCCESS') {
-                                    try {
-                                        def previousEnv = previousBuild.getBuildVariables()
-                                        if (previousEnv.containsKey('GIT_COMMIT')) {
-                                            previousCommit = previousEnv['GIT_COMMIT']
-                                            break
-                                        }
-                                    } catch (Exception envEx) {
-                                        // Try alternative method
-                                        def previousActions = previousBuild.getAllActions()
-                                        for (action in previousActions) {
-                                            if (action.hasProperty('lastBuiltRevision') && action.lastBuiltRevision != null) {
-                                                previousCommit = action.lastBuiltRevision.getSha1String()
-                                                break
-                                            }
-                                        }
-                                        if (previousCommit) break
-                                    }
-                                }
-                                previousBuild = previousBuild.getPreviousBuild()
+                    //         // Look for the last successful build
+                    //         while (previousBuild != null) {
+                    //             if (previousBuild.getResult() == null || previousBuild.getResult().toString() == 'SUCCESS') {
+                    //                 try {
+                    //                     def previousEnv = previousBuild.getBuildVariables()
+                    //                     if (previousEnv.containsKey('GIT_COMMIT')) {
+                    //                         previousCommit = previousEnv['GIT_COMMIT']
+                    //                         break
+                    //                     }
+                    //                 } catch (Exception envEx) {
+                    //                     // Try alternative method
+                    //                     def previousActions = previousBuild.getAllActions()
+                    //                     for (action in previousActions) {
+                    //                         if (action.hasProperty('lastBuiltRevision') && action.lastBuiltRevision != null) {
+                    //                             previousCommit = action.lastBuiltRevision.getSha1String()
+                    //                             break
+                    //                         }
+                    //                     }
+                    //                     if (previousCommit) break
+                    //                 }
+                    //             }
+                    //             previousBuild = previousBuild.getPreviousBuild()
+                    //         }
+                            
+                    //         if (previousCommit) {
+                    //             echo "Comparing changes between ${previousCommit[0..7]} and ${env.GIT_COMMIT[0..7]}"
+                                
+                    //             // Check for backend changes
+                    //             // def backendChangesOutput = sh(
+                    //             //     script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/' || true",
+                    //             //     returnStdout: true
+                    //             // ).trim()
+                                
+                    //             // // Check for frontend changes  
+                    //             // def frontendChangesOutput = sh(
+                    //             //     script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/' || true",
+                    //             //     returnStdout: true
+                    //             // ).trim()
+                                
+                    //             // backendChanged = !backendChangesOutput.isEmpty()
+                    //             // frontendChanged = !frontendChangesOutput.isEmpty()
+                                
+                    //             // if (backendChanged) {
+                    //             //     echo "Backend changes detected:"
+                    //             //     sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/'"
+                    //             // }
+                                
+                    //             // if (frontendChanged) {
+                    //             //     echo "Frontend changes detected:"
+                    //             //     sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/'"
+                    //             // }
+
+                    //             // Debug: Show all changed files
+                    //             echo "=== DEBUG: All changed files ==="
+                    //             sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT}"
+
+                    //             // Check backend changes with debug
+                    //             def backendChangesOutput = sh(
+                    //                 script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/' || true",
+                    //                 returnStdout: true
+                    //             ).trim()
+
+                    //             if (backendChanged) {
+                    //                 echo "Backend changes detected:"
+                    //                 echo "Raw output: '${backendChangesOutput}'"
+                    //                 sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/'"
+                    //             } else {
+                    //                 echo "No backend changes (output was: '${backendChangesOutput}')"
+                    //             }
+
+                    //             // Check frontend changes with debug  
+                    //             def frontendChangesOutput = sh(
+                    //                 script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/' || true",
+                    //                 returnStdout: true
+                    //             ).trim()
+
+                    //             if (frontendChanged) {
+                    //                 echo "Frontend changes detected:"
+                    //                 echo "Raw output: '${frontendChangesOutput}'"
+                    //                 sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/'"
+                    //             } else {
+                    //                 echo "No frontend changes (output was: '${frontendChangesOutput}')"
+                    //             }
+
+                    //             // Debug: Show what commits we're comparing
+                    //             echo "=== DEBUG: Commit comparison ==="
+                    //             echo "Previous commit: ${previousCommit}"
+                    //             echo "Current commit: ${env.GIT_COMMIT}"
+
+                    //             if (!backendChanged && !frontendChanged) {
+                    //                 echo "No changes detected in backend or frontend directories"
+                    //                 // Check if there are any changes at all
+                    //                 def anyChanges = sh(
+                    //                     script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT}",
+                    //                     returnStdout: true
+                    //                 ).trim()
+                                    
+                    //                 if (!anyChanges.isEmpty()) {
+                    //                     echo "Changes detected in other files:"
+                    //                     sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT}"
+                    //                     echo "Building both components due to root-level or other changes"
+                    //                     backendChanged = true
+                    //                     frontendChanged = true
+                    //                 }
+                    //             }
+                    //         } else {
+                    //             echo "No previous successful build found - building all components"
+                    //             backendChanged = true
+                    //             frontendChanged = true
+                    //         }
+                    //     } catch (Exception e) {
+                    //         echo "Error detecting changes: ${e.getMessage()}"
+                    //         echo "Defaulting to build all components"
+                    //         backendChanged = true
+                    //         frontendChanged = true
+                    //     }
+                    // }
+
+                        try {
+                            echo "Comparing current commit with previous commit (HEAD~1)"
+                            
+                            // Check for backend changes
+                            def backendChangesOutput = sh(
+                                script: "git diff --name-only HEAD~1 HEAD | grep '^${BACKEND_PATH}/' || true",
+                                returnStdout: true
+                            ).trim()
+                            
+                            // Check for frontend changes  
+                            def frontendChangesOutput = sh(
+                                script: "git diff --name-only HEAD~1 HEAD | grep '^${FRONTEND_PATH}/' || true",
+                                returnStdout: true
+                            ).trim()
+                            
+                            backendChanged = !backendChangesOutput.isEmpty()
+                            frontendChanged = !frontendChangesOutput.isEmpty()
+                            
+                            if (backendChanged) {
+                                echo "Backend changes detected:"
+                                sh "git diff --name-only HEAD~1 HEAD | grep '^${BACKEND_PATH}/'"
                             }
                             
-                            if (previousCommit) {
-                                echo "Comparing changes between ${previousCommit[0..7]} and ${env.GIT_COMMIT[0..7]}"
-                                
-                                // Check for backend changes
-                                // def backendChangesOutput = sh(
-                                //     script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/' || true",
-                                //     returnStdout: true
-                                // ).trim()
-                                
-                                // // Check for frontend changes  
-                                // def frontendChangesOutput = sh(
-                                //     script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/' || true",
-                                //     returnStdout: true
-                                // ).trim()
-                                
-                                // backendChanged = !backendChangesOutput.isEmpty()
-                                // frontendChanged = !frontendChangesOutput.isEmpty()
-                                
-                                // if (backendChanged) {
-                                //     echo "Backend changes detected:"
-                                //     sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/'"
-                                // }
-                                
-                                // if (frontendChanged) {
-                                //     echo "Frontend changes detected:"
-                                //     sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/'"
-                                // }
-
-                                // Debug: Show all changed files
-                                echo "=== DEBUG: All changed files ==="
-                                sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT}"
-
-                                // Check backend changes with debug
-                                def backendChangesOutput = sh(
-                                    script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/' || true",
+                            if (frontendChanged) {
+                                echo "Frontend changes detected:"
+                                sh "git diff --name-only HEAD~1 HEAD | grep '^${FRONTEND_PATH}/'"
+                            }
+                            
+                            if (!backendChanged && !frontendChanged) {
+                                echo "No changes detected in backend or frontend directories"
+                                // Check if there are any changes at all
+                                def anyChanges = sh(
+                                    script: "git diff --name-only HEAD~1 HEAD",
                                     returnStdout: true
                                 ).trim()
-
-                                if (backendChanged) {
-                                    echo "Backend changes detected:"
-                                    echo "Raw output: '${backendChangesOutput}'"
-                                    sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/'"
-                                } else {
-                                    echo "No backend changes (output was: '${backendChangesOutput}')"
+                                
+                                if (!anyChanges.isEmpty()) {
+                                    echo "Changes detected in other files:"
+                                    sh "git diff --name-only HEAD~1 HEAD"
+                                    echo "Building both components due to root-level or other changes"
+                                    backendChanged = true
+                                    frontendChanged = true
                                 }
-
-                                // Check frontend changes with debug  
-                                def frontendChangesOutput = sh(
-                                    script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/' || true",
-                                    returnStdout: true
-                                ).trim()
-
-                                if (frontendChanged) {
-                                    echo "Frontend changes detected:"
-                                    echo "Raw output: '${frontendChangesOutput}'"
-                                    sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/'"
-                                } else {
-                                    echo "No frontend changes (output was: '${frontendChangesOutput}')"
-                                }
-
-                                // Debug: Show what commits we're comparing
-                                echo "=== DEBUG: Commit comparison ==="
-                                echo "Previous commit: ${previousCommit}"
-                                echo "Current commit: ${env.GIT_COMMIT}"
-
-                                if (!backendChanged && !frontendChanged) {
-                                    echo "No changes detected in backend or frontend directories"
-                                    // Check if there are any changes at all
-                                    def anyChanges = sh(
-                                        script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT}",
-                                        returnStdout: true
-                                    ).trim()
-                                    
-                                    if (!anyChanges.isEmpty()) {
-                                        echo "Changes detected in other files:"
-                                        sh "git diff --name-only ${previousCommit} ${env.GIT_COMMIT}"
-                                        echo "Building both components due to root-level or other changes"
-                                        backendChanged = true
-                                        frontendChanged = true
-                                    }
-                                }
-                            } else {
-                                echo "No previous successful build found - building all components"
-                                backendChanged = true
-                                frontendChanged = true
                             }
                         } catch (Exception e) {
                             echo "Error detecting changes: ${e.getMessage()}"
