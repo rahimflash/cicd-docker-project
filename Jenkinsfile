@@ -162,19 +162,19 @@ pipeline {
                                 echo "Comparing changes between ${previousCommit[0..7]} and ${env.GIT_COMMIT[0..7]}"
                                 
                                 // Check for backend changes
-                                def backendChangesOutput = sh(
-                                    script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/' || true",
-                                    returnStdout: true
-                                ).trim()
+                                // def backendChangesOutput = sh(
+                                //     script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${BACKEND_PATH}/' || true",
+                                //     returnStdout: true
+                                // ).trim()
                                 
-                                // Check for frontend changes  
-                                def frontendChangesOutput = sh(
-                                    script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/' || true",
-                                    returnStdout: true
-                                ).trim()
+                                // // Check for frontend changes  
+                                // def frontendChangesOutput = sh(
+                                //     script: "git diff --name-only ${previousCommit} ${env.GIT_COMMIT} | grep '^${FRONTEND_PATH}/' || true",
+                                //     returnStdout: true
+                                // ).trim()
                                 
-                                backendChanged = !backendChangesOutput.isEmpty()
-                                frontendChanged = !frontendChangesOutput.isEmpty()
+                                // backendChanged = !backendChangesOutput.isEmpty()
+                                // frontendChanged = !frontendChangesOutput.isEmpty()
                                 
                                 // if (backendChanged) {
                                 //     echo "Backend changes detected:"
@@ -222,7 +222,7 @@ pipeline {
                                 echo "=== DEBUG: Commit comparison ==="
                                 echo "Previous commit: ${previousCommit}"
                                 echo "Current commit: ${env.GIT_COMMIT}"
-                                
+
                                 if (!backendChanged && !frontendChanged) {
                                     echo "No changes detected in backend or frontend directories"
                                     // Check if there are any changes at all
