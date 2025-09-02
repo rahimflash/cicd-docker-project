@@ -369,7 +369,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                 
                                 // Composer audit for security vulnerabilities
                                 sh '''
-                                    docker run --rm -v $(pwd): composer:2.7 audit || true
+                                    docker run --rm -v $(pwd):/app composer:2.7 audit || true
                                 '''
                                 
                                 // PHP syntax check
@@ -396,7 +396,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                 
                                 // NPM audit
                                 sh '''
-                                    docker run --rm -v $(pwd): -w /app node:${NODE_VERSION}-alpine \
+                                    docker run --rm -v $(pwd):/app -w /app node:${NODE_VERSION}-alpine \
                                         sh -c "npm audit --audit-level=high || true"
                                 '''
                             }
@@ -532,26 +532,32 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                     sh '''
                                         if [ -f package.json ]; then
                                             echo "Available npm scripts:"
-                                            cat package.json | jq '.scripts' || cat package.json | grep -A 10 '"scripts"'
-                                        else
+                                            cat package.json | grep -A 10 '"scripts"'                                        else
                                             echo "package.json not found"
                                         fi
                                     '''
                                     
+                                    // sh '''
+                                    //     docker run --rm \
+                                    //         -v $(pwd):/app \
+                                    //         -w /app \
+                                    //         ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
+                                    //         sh -c "npm test || echo 'No test script found'" || true
+                                    // '''
+                                    
+                                    // sh '''
+                                    //     docker run --rm \
+                                    //         -v $(pwd):/app \
+                                    //         -w /app \
+                                    //         ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
+                                    //         sh -c "npm run lint || echo 'No lint script found'" || true
+                                    // '''
                                     sh '''
-                                        docker run --rm \
-                                            -v $(pwd): \
-                                            -w /app \
-                                            ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
-                                            sh -c "npm test || echo 'No test script found'" || true
+                                        docker run --rm ${FRONTEND_IMAGE}:${BUILD_NUMBER} npm test || echo 'No test script found'
                                     '''
                                     
                                     sh '''
-                                        docker run --rm \
-                                            -v $(pwd): \
-                                            -w /app \
-                                            ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
-                                            sh -c "npm run lint || echo 'No lint script found'" || true
+                                        docker run --rm ${FRONTEND_IMAGE}:${BUILD_NUMBER} npm run lint || echo 'No lint script found'
                                     '''
                                 }
                             }
