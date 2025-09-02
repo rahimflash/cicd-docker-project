@@ -917,6 +917,9 @@ EOF
     network_mode: "host"
     env_file:
     - ./front-end/.env.local
+    volumes:
+      - ./front-end:/app
+      - /app/node_modules
     restart: unless-stopped
     depends_on:
     - backend
