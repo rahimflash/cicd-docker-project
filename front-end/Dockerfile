@@ -20,6 +20,8 @@ ENV NEXT_TELEMETRY_DISABLED 1
 ARG SECRET_COOKIE_PASSWORD=asde213nfdswefhd46rhfnshfk3jfjkldj3j2jkf
 ENV SECRET_COOKIE_PASSWORD=$SECRET_COOKIE_PASSWORD
 
+RUN npm run lint
+
 RUN npm run build
 # RUN ls -R /app/.next/standalone || true
 # RUN ls -R /app/.next || true

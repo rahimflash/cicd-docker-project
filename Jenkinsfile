@@ -532,7 +532,8 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                                     sh '''
                                         if [ -f package.json ]; then
                                             echo "Available npm scripts:"
-                                            cat package.json | grep -A 10 '"scripts"'                                        else
+                                            cat package.json | grep -A 10 '"scripts"'   
+                                        else
                                             echo "package.json not found"
                                         fi
                                     '''
