@@ -827,7 +827,7 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                     
                     if (params.DEPLOY_LOCALLY) {
                         // If parameter is already true, just deploy
-                        deployLocally = false
+                        deployLocally = true
                         echo "Local deployment enabled by parameter - proceeding automatically"
                     } else {
                         // Ask user for confirmation
@@ -850,6 +850,9 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                         return
                     }
                     
+                    // Mark that we are deploying locally
+                    env.ACTUALLY_DEPLOYED_LOCALLY = 'true'
+
                     echo "Deploying to local Docker environment..."
                     
                     // Verify .env files exist
