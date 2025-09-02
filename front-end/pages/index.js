@@ -56,7 +56,7 @@ export default function Index() {
                             Albert
                         </div>
                         <p className="text-center text-gray-900 font-light">
-                            Albert System
+                            Flash Systems
                         </p>
                         <p className="text-sm text-gray-500 my-2">
                             Strengthening Systems.
