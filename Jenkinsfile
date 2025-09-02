@@ -528,38 +528,39 @@ Deploy Locally: ${params.DEPLOY_LOCALLY}
                             // Frontend Tests
                             if (!params.SKIP_TESTS) {
                                 dir("${FRONTEND_PATH}") {
-                                    echo "Running frontend tests..."
-                                    sh '''
-                                        if [ -f package.json ]; then
-                                            echo "Available npm scripts:"
-                                            cat package.json | grep -A 10 '"scripts"'   
-                                        else
-                                            echo "package.json not found"
-                                        fi
-                                    '''
-                                    
+                                    // echo "Running frontend tests..."
+                                    echo "Skipping frontend tests - validation handled during Docker build"
                                     // sh '''
-                                    //     docker run --rm \
-                                    //         -v $(pwd):/app \
-                                    //         -w /app \
-                                    //         ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
-                                    //         sh -c "npm test || echo 'No test script found'" || true
+                                    //     if [ -f package.json ]; then
+                                    //         echo "Available npm scripts:"
+                                    //         cat package.json | grep -A 10 '"scripts"'   
+                                    //     else
+                                    //         echo "package.json not found"
+                                    //     fi
+                                    // '''
+                                    
+                                    // // sh '''
+                                    // //     docker run --rm \
+                                    // //         -v $(pwd):/app \
+                                    // //         -w /app \
+                                    // //         ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
+                                    // //         sh -c "npm test || echo 'No test script found'" || true
+                                    // // '''
+                                    
+                                    // // sh '''
+                                    // //     docker run --rm \
+                                    // //         -v $(pwd):/app \
+                                    // //         -w /app \
+                                    // //         ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
+                                    // //         sh -c "npm run lint || echo 'No lint script found'" || true
+                                    // // '''
+                                    // sh '''
+                                    //     docker run --rm ${FRONTEND_IMAGE}:${BUILD_NUMBER} npm test || echo 'No test script found'
                                     // '''
                                     
                                     // sh '''
-                                    //     docker run --rm \
-                                    //         -v $(pwd):/app \
-                                    //         -w /app \
-                                    //         ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
-                                    //         sh -c "npm run lint || echo 'No lint script found'" || true
+                                    //     docker run --rm ${FRONTEND_IMAGE}:${BUILD_NUMBER} npm run lint || echo 'No lint script found'
                                     // '''
-                                    sh '''
-                                        docker run --rm ${FRONTEND_IMAGE}:${BUILD_NUMBER} npm test || echo 'No test script found'
-                                    '''
-                                    
-                                    sh '''
-                                        docker run --rm ${FRONTEND_IMAGE}:${BUILD_NUMBER} npm run lint || echo 'No lint script found'
-                                    '''
                                 }
                             }
                             
