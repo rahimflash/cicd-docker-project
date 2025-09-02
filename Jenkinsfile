@@ -913,16 +913,6 @@ EOF
                                 cat >> docker-compose.override.yml << 'EOF'
   frontend:
     image: ${FRONTEND_IMAGE}:${BUILD_NUMBER}
-    container_name: clms_frontend
-    network_mode: "host"
-    env_file:
-    - ./front-end/.env.local
-    volumes:
-      - ./front-end:/app
-      - /app/node_modules
-    restart: unless-stopped
-    depends_on:
-    - backend
 EOF
                             """
                         }
